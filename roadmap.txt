@@ -1,0 +1,137 @@
+=====================================================================
+ ROADMAP - APP DE CONTENCOES (empuxos, esforcos e ficha de estacas)
+=====================================================================
+Legenda: [x] feito   [~] em andamento   [ ] a fazer
+
+---------------------------------------------------------------------
+DECISOES DE ARQUITETURA
+---------------------------------------------------------------------
+- Interface e calculos em HTML + JavaScript puro, em UM unico arquivo
+  (index.html). Abre com duplo clique, sem instalar nada, funciona
+  offline.
+- Python fica como OPCAO FUTURA (Etapa 9) caso os calculos fiquem
+  pesados (otimizacao, verificacoes complexas). Ate la, tudo em JS.
+- Visual: claro, azul e branco, estilo software de engenharia
+  (inspirado no GEO5): painel lateral de modos, area de desenho,
+  painel de resultados.
+- Unidades: kN, m, kPa, kN/m3, graus.
+
+---------------------------------------------------------------------
+ETAPA 1 - Interface e desenho esquemático  [x]
+---------------------------------------------------------------------
+[x] Layout base azul/branco (barra superior, abas, painel de inputs,
+    area de desenho)
+[x] Inputs gerais: altura de contencao H, sobrecarga q no topo,
+    profundidade de ficha D (estimada), nivel d'agua (campo
+    reservado)
+[x] Camadas do lado ATIVO: adicionar/remover, espessura, phi, c,
+    gama
+[x] Camadas do lado PASSIVO: adicionar/remover, espessura, phi, c,
+    gama
+[x] Escolha do metodo: Rankine ou Coulomb (campos de delta e beta
+    aparecem para Coulomb)
+[x] Desenho esquematico dinamico (SVG) com cotas, camadas coloridas,
+    sobrecarga e parede - atualiza conforme os inputs
+[x] Salvar/carregar projeto em arquivo .json
+
+---------------------------------------------------------------------
+ETAPA 2 - Motor de calculo de empuxos  [ ]
+---------------------------------------------------------------------
+[ ] Ka e Kp por Rankine (terreno horizontal, parede vertical)
+[ ] Ka e Kp por Coulomb (delta, beta, alfa da parede)
+[ ] Tensao horizontal ativa e passiva por camada (com coesao:
+    sigma_a = sigma_v*Ka - 2c*sqrt(Ka); sigma_p = sigma_v*Kp +
+    2c*sqrt(Kp))
+[ ] Efeito da sobrecarga uniforme no topo
+[ ] Zona de tracao (corte da tensao negativa) - opcao do usuario
+[ ] Tabela de resultados por profundidade
+[ ] Validacao com exemplos de livro (conferir manualmente)
+
+---------------------------------------------------------------------
+ETAPA 3 - Graficos de empuxo, cortante e momento  [ ]
+---------------------------------------------------------------------
+[ ] Diagrama de empuxo (ativo, passivo, resultante)
+[ ] Diagrama de esforco cortante V(z)
+[ ] Diagrama de momento fletor M(z)
+[ ] Valores maximos destacados (Vmax, Mmax e profundidade)
+[ ] Graficos ao lado do desenho, estilo GEO5
+
+---------------------------------------------------------------------
+ETAPA 4 - Dimensionamento da ficha (cortina/estaca em balanco) [ ]
+---------------------------------------------------------------------
+METODO DA FOLHA MANUSCRITA DO USUARIO (cortina em balanco, SEM tirantes)
+  Pa = gama*h*Ka - 2c*raiz(Ka)        Pp = gama*h*Kp + 2c*raiz(Kp)
+  Ka = tg2(45 - phi/2)                Kp = tg2(45 + phi/2)
+  Pa1 (topo): se negativo, considerar zero (depende da sobrecarga)
+  Pp1 (nivel da escavacao) = 0
+  Pa2A / Pa2B: empuxo ativo no nivel da escavacao (camada de cima / de baixo)
+  Pp2 e Pa3: passivo e ativo na ponta C
+  Ppe = Pp2 - Pa3   (passivo liquido na ponta C)
+  x'  -> profundidade abaixo da escavacao onde Ppe = 0 (PONTO DE GIRO O)
+  x   -> distancia O-C, obtida de  soma(Mc) = 0:
+         E1*y1 + E2*y2 - E3*y3 = 0
+  Z = x + x'
+  Ficha de projeto = 1,2 * Z
+  Sentido: escavacao (passivo) a esquerda, solo contido + sobrecarga
+  (ativo) a direita.
+
+[ ] Diagrama de pressoes ativo/passivo com Pa1, Pa2A, Pa2B, Pa3, Pp2, Ppe
+[ ] Calculo de x' (ponto de giro) com camadas multiplas
+[ ] Calculo de x por equilibrio de momentos em C (E1,y1; E2,y2; E3,y3)
+[ ] Z = x + x' e ficha de projeto = 1,2 Z (fator editavel)
+[ ] Opcao: fator de seguranca no empuxo passivo (ex.: 1,5)
+[ ] Resumo: ficha teorica x ficha adotada, comprimento total
+[ ] Conferir resultado com exemplo resolvido a mao pelo usuario
+
+---------------------------------------------------------------------
+ETAPA 5 - Muro de contencao (gravidade / flexao)  [ ]
+---------------------------------------------------------------------
+[ ] Geometria do muro (base, topo, altura, sapata)
+[ ] Verificacao ao tombamento
+[ ] Verificacao ao deslizamento
+[ ] Tensoes na base / capacidade de carga
+[ ] Esforcos no fuste e na sapata
+
+---------------------------------------------------------------------
+ETAPA 6 - Nspt -> parametros do solo  [ ]
+---------------------------------------------------------------------
+(aguardando o usuario enviar as correlacoes)
+[ ] Tabela de tipo de solo x Nspt
+[ ] Calculo automatico de phi, c e gama por camada
+[ ] Botao "calcular a partir do Nspt" em cada camada
+[ ] Permitir editar manualmente depois
+
+---------------------------------------------------------------------
+ETAPA 7 - Recursos adicionais  [ ]
+---------------------------------------------------------------------
+[ ] Nivel d'agua (empuxo hidrostatico, peso submerso)
+[ ] Ancoragens / escoras
+[ ] Sobrecargas em faixa / lineares
+[ ] Terreno inclinado
+[ ] Sismo (opcional)
+
+---------------------------------------------------------------------
+ETAPA 8 - Relatorio e exportacao  [ ]
+---------------------------------------------------------------------
+[ ] Memoria de calculo imprimivel / PDF
+[ ] Exportar graficos como imagem
+[ ] Exportar tabelas para CSV/Excel
+
+---------------------------------------------------------------------
+ETAPA 9 - Backend Python (opcional)  [ ]
+---------------------------------------------------------------------
+[ ] Avaliar necessidade
+[ ] Servidor local simples (Flask/FastAPI) se necessario
+[ ] Empacotar como .exe (PyInstaller) se quiser distribuir
+
+---------------------------------------------------------------------
+BANCO DE IDEIAS (nao perder)
+---------------------------------------------------------------------
+- Tela inicial parecida com desenho esquematico manual do usuario,
+  mostrando cotas e o que e considerado nos inputs
+- Perguntar ao usuario Rankine ou Coulomb
+- Camadas ativas e passivas independentes
+- Correlacoes Nspt (usuario vai informar)
+- Visual semelhante ao GEO5 (modos na lateral, resultados a direita)
+- Possivel modo escuro (baixa prioridade)
+- Biblioteca de solos tipicos salva pelo usuario

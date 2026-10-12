@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contenções - Etapa 1</title>
+<style>
+  :root{
+    --blue:#1f6feb; --blue-d:#154ea8; --blue-l:#e8f1fe; --blue-m:#cfe0fb;
+    --bg:#f4f8fd; --white:#fff; --line:#d5e1f2; --text:#1b2a41; --muted:#6b7c93;
+    --red:#d64545;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+  header{background:var(--white);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0;color:var(--blue-d)}
+  header .tag{background:var(--blue-l);color:var(--blue-d);border-radius:20px;padding:2px 10px;font-size:12px}
+  header .sp{flex:1}
+  button{font:inherit;cursor:pointer;border:1px solid var(--blue);background:var(--white);color:var(--blue);border-radius:6px;padding:6px 12px}
+  button:hover{background:var(--blue-l)}
+  button.primary{background:var(--blue);color:#fff}
+  button.primary:hover{background:var(--blue-d)}
+  button.x{border-color:var(--line);color:var(--red);padding:2px 8px}
+  main{display:grid;grid-template-columns:400px 1fr 250px;gap:14px;padding:14px;align-items:start}
+  @media(max-width:1200px){main{grid-template-columns:380px 1fr}.right{grid-column:1/-1}}
+  @media(max-width:850px){main{grid-template-columns:1fr}}
+  .card{background:var(--white);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--blue-d);margin:0 0 10px;border-bottom:2px solid var(--blue-m);padding-bottom:6px}
+  .row{display:flex;gap:10px;margin-bottom:8px;align-items:center}
+  .row label{flex:1;color:var(--muted)}
+  input[type=number],input[type=text]{width:90px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:right}
+  input[type=text]{text-align:left;width:100%}
+  input:focus{outline:2px solid var(--blue-m);border-color:var(--blue)}
+  .seg{display:flex;border:1px solid var(--blue);border-radius:6px;overflow:hidden}
+  .seg button{border:0;border-radius:0;flex:1}
+  .seg button.on{background:var(--blue);color:#fff}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:var(--blue-l);color:var(--blue-d);font-weight:600;padding:5px 3px;text-align:center}
+  td{padding:3px 2px;text-align:center}
+  td input[type=number]{width:100%;padding:4px 3px}
+  td:first-child{color:var(--blue-d);font-weight:600}
+  .add{margin-top:8px;width:100%}
+  .draw{padding:6px}
+  svg{width:100%;height:auto;display:block;background:#fff;border-radius:8px}
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line)}
+  .kv b{color:var(--blue-d)}
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+  .warn{color:var(--red);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cortinas em Balanço</h1><span class="tag">Etapa 1 · Dados e esquema</span>
+  <div class="sp"></div>
+  <button id="btnSave">Salvar projeto</button>
+  <button id="btnLoad">Abrir projeto</button>
+  <input id="fileIn" type="file" accept=".json" hidden>
+  <button class="primary" id="btnCalc" title="Disponível na Etapa 2">Calcular (em breve)</button>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>Método de empuxo</h2>
+      <div class="seg" id="method">
+        <button data-m="rankine" class="on">Rankine</button>
+        <button data-m="coulomb">Coulomb</button>
+      </div>
+      <div id="coulombBox" style="display:none;margin-top:10px">
+        <div class="row"><label>δ ativo (atrito solo-parede)</label><input type="number" id="deltaA" value="15" step="any"> °</div>
+        <div class="row"><label>δ passivo</label><input type="number" id="deltaP" value="0" step="any"> °</div>
+        <div class="row"><label>β (inclinação do terreno)</label><input type="number" id="beta" value="0" step="any"> °</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Geometria e carga</h2>
+      <div class="row"><label>Altura de contenção h</label><input type="number" id="H" value="5" step="any" min="0.5"> m</div>
+      <div class="row"><label>Ficha D (apenas desenho)</label><input type="number" id="D" value="4" step="any" min="0.5"> m</div>
+      <div class="row"><label>Sobrecarga no topo q</label><input type="number" id="q" value="10" step="any" min="0"> kPa</div>
+    </div>
+
+    <div class="card">
+      <h2>Camadas — lado ativo (solo contido)</h2>
+      <table><thead><tr><th>#</th><th>Esp. (m)</th><th>φ (°)</th><th>c (kPa)</th><th>γ (kN/m³)</th><th></th></tr></thead><tbody id="tA"></tbody></table>
+      <button class="add" data-add="A">+ Adicionar camada</button>
+    </div>
+
+    <div class="card">
+      <h2>Camadas — lado passivo (escavação)</h2>
+      <table><thead><tr><th>#</th><th>Esp. (m)</th><th>φ (°)</th><th>c (kPa)</th><th>γ (kN/m³)</th><th></th></tr></thead><tbody id="tP"></tbody></table>
+      <button class="add" data-add="P">+ Adicionar camada</button>
+      <div class="note" style="margin-top:8px">A última camada de cada lado se estende até o fundo. Camadas passivas contam a partir do nível da escavação.</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card draw"><svg id="svg" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  </section>
+
+  <section class="right">
+    <div class="card">
+      <h2>Resumo</h2>
+      <div class="kv"><span>Método</span><b id="sMethod"></b></div>
+      <div class="kv"><span>h</span><b id="sH"></b></div>
+      <div class="kv"><span>Ficha D</span><b id="sD"></b></div>
+      <div class="kv"><span>Comprimento total</span><b id="sL"></b></div>
+      <div class="kv"><span>Sobrecarga q</span><b id="sQ"></b></div>
+      <div class="kv"><span>Camadas ativas</span><b id="sNA"></b></div>
+      <div class="kv"><span>Camadas passivas</span><b id="sNP"></b></div>
+      <div id="warn" class="warn"></div>
+    </div>
+    <div class="card">
+      <h2>Convenção</h2>
+      <div class="note">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z (Etapa 4).</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const PAL=['#fdf0c9','#d9f2d4','#d3d9f4','#f6dfe0','#e3ddf0','#ffe3c7','#d1eef2'];
+const st={
+  method:'rankine',
+  layersA:[{t:1.5,phi:30,c:0,g:18},{t:1.0,phi:28,c:5,g:18},{t:3,phi:22,c:15,g:17}],
+  layersP:[{t:1.5,phi:30,c:0,g:18},{t:3,phi:28,c:10,g:18}]
+};
+const $=id=>document.getElementById(id);
+const num=(id,d)=>{const v=parseFloat($(id).value);return isFinite(v)?v:d};
+const f2=v=>v.toFixed(2).replace('.',',');
+
+function tableRows(side){
+  const L=side==='A'?st.layersA:st.layersP;
+  return L.map((l,i)=>{
+    const last=i===L.length-1;
+    return `<tr><td>${side}${i+1}</td>
+      <td><input type="number" step="any" min="0.1" value="${l.t}" data-s="${side}" data-i="${i}" data-k="t" ${last?'disabled title="até o fundo"':''}></td>
+      <td><input type="number" step="any" value="${l.phi}" data-s="${side}" data-i="${i}" data-k="phi"></td>
+      <td><input type="number" step="any" value="${l.c}" data-s="${side}" data-i="${i}" data-k="c"></td>
+      <td><input type="number" step="any" value="${l.g}" data-s="${side}" data-i="${i}" data-k="g"></td>
+      <td>${L.length>1?`<button class="x" data-del="${side}" data-i="${i}">×</button>`:''}</td></tr>`;
+  }).join('');
+}
+function renderTables(){ $('tA').innerHTML=tableRows('A'); $('tP').innerHTML=tableRows('P'); }
+
+function boundaries(L,total){ // returns [{z1,z2,layer,idx}]
+  const out=[];let z=0;
+  L.forEach((l,i)=>{
+    const last=i===L.length-1;
+    const z2=last?total:Math.min(total,z+l.t);
+    if(z<total) out.push({z1:z,z2,l,i});
+    z+=l.t;
+  });
+  return out;
+}
+
+function draw(){
+  const H=Math.max(0.5,num('H',5)), D=Math.max(0.5,num('D',4)), q=Math.max(0,num('q',0));
+  const total=H+D;
+  const y0=95, yMax=500, s=Math.min(60,(yMax-y0)/total);
+  const yE=y0+H*s, yB=y0+total*s;
+  const xw=400, ww=14, xl=95, xr=715;
+  let o='';
+  o+=`<defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#154ea8"/></marker>
+    <marker id="ard" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#1b2a41"/></marker>
+    <pattern id="hat" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#4b6ea8"/><line x1="0" y1="0" x2="0" y2="6" stroke="#fff" stroke-width="1.5"/></pattern>
+  </defs>`;
+  // active layers (right)
+  boundaries(st.layersA,total).forEach(b=>{
+    const ya=y0+b.z1*s, yb=y0+b.z2*s;
+    o+=`<rect x="${xw+ww/2}" y="${ya}" width="${xr-xw-ww/2}" height="${yb-ya}" fill="${PAL[b.i%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
+    if(yb-ya>34){
+      o+=`<text x="${xw+ww/2+14}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">A${b.i+1}</text>
+      <text x="${xw+ww/2+14}" y="${ya+31}" font-size="11" fill="#40526b">φ=${b.l.phi}°  c=${b.l.c} kPa  γ=${b.l.g} kN/m³</text>`;
+    } else if(yb-ya>16){
+      o+=`<text x="${xw+ww/2+14}" y="${ya+(yb-ya)/2+4}" font-size="11" fill="#40526b">A${b.i+1}: φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
+    }
+    if(b.z1>0){
+      o+=`<text x="${xr+4}" y="${ya+4}" font-size="10" fill="#6b7c93">${f2(b.z1)}</text>`;
+    }
+  });
+  // passive layers (left)
+  boundaries(st.layersP,D).forEach(b=>{
+    const ya=yE+b.z1*s, yb=yE+b.z2*s;
+    o+=`<rect x="${xl}" y="${ya}" width="${xw-ww/2-xl}" height="${yb-ya}" fill="${PAL[(b.i+3)%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
+    if(yb-ya>34){
+      o+=`<text x="${xl+10}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">P${b.i+1}</text>
+      <text x="${xl+10}" y="${ya+31}" font-size="11" fill="#40526b">φ=${b.l.phi}°  c=${b.l.c} kPa  γ=${b.l.g}</text>`;
+    } else if(yb-ya>16){
+      o+=`<text x="${xl+10}" y="${ya+(yb-ya)/2+4}" font-size="11" fill="#40526b">P${b.i+1}: φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
+    }
+  });
+  // ground lines
+  o+=`<line x1="${xw+ww/2}" y1="${y0}" x2="${xr}" y2="${y0}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  o+=`<line x1="${xl}" y1="${yE}" x2="${xw-ww/2}" y2="${yE}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  // dashed top level on excavation side
+  o+=`<line x1="${xl-10}" y1="${y0}" x2="${xw-ww/2}" y2="${y0}" stroke="#8aa0c0" stroke-dasharray="6 5"/>`;
+  // wall
+  o+=`<rect x="${xw-ww/2}" y="${y0}" width="${ww}" height="${yB-y0}" fill="url(#hat)" stroke="#154ea8" stroke-width="1.5"/>`;
+  o+=`<text x="${xw}" y="${yB+16}" font-size="12" text-anchor="middle" fill="#154ea8" font-weight="700">C</text>`;
+  // surcharge
+  const sx1=xw+ww/2+10, sx2=xr-20, ysc=y0-42;
+  if(q>0){
+    o+=`<line x1="${sx1}" y1="${ysc}" x2="${sx2}" y2="${ysc}" stroke="#154ea8" stroke-width="2"/>`;
+    const n=Math.max(4,Math.floor((sx2-sx1)/45));
+    for(let k=0;k<=n;k++){const x=sx1+(sx2-sx1)*k/n;
+      o+=`<line x1="${x}" y1="${ysc}" x2="${x}" y2="${y0-3}" stroke="#154ea8" stroke-width="1.6" marker-end="url(#ar)"/>`;}
+    o+=`<text x="${(sx1+sx2)/2}" y="${ysc-8}" font-size="13" text-anchor="middle" fill="#154ea8" font-weight="700">q = ${f2(q)} kPa</text>`;
+  } else {
+    o+=`<text x="${(sx1+sx2)/2}" y="${y0-14}" font-size="12" text-anchor="middle" fill="#6b7c93">sem sobrecarga</text>`;
+  }
+  // dimensions
+  const dx=50;
+  const dim=(y1,y2,label,color)=>`<line x1="${dx}" y1="${y1}" x2="${dx}" y2="${y2}" stroke="${color}" stroke-width="1.5" marker-start="url(#ard)" marker-end="url(#ard)"/>
+    <line x1="${dx-8}" y1="${y1}" x2="${dx+8}" y2="${y1}" stroke="${color}"/><line x1="${dx-8}" y1="${y2}" x2="${dx+8}" y2="${y2}" stroke="${color}"/>
+    <text x="${dx-12}" y="${(y1+y2)/2}" font-size="13" fill="${color}" font-weight="700" text-anchor="middle" transform="rotate(-90 ${dx-12} ${(y1+y2)/2})">${label}</text>`;
+  o+=dim(y0,yE,`h = ${f2(H)} m`,'#1b2a41');
+  o+=dim(yE,yB,`D = ${f2(D)} m (ficha)`,'#154ea8');
+  // labels
+  o+=`<text x="${xl+8}" y="${yE-8}" font-size="12" fill="#6b7c93">Escavação · lado passivo</text>`;
+  o+=`<text x="${xr-8}" y="${y0+18}" font-size="12" fill="#6b7c93" text-anchor="end">Solo contido · lado ativo</text>`;
+  o+=`<text x="${xr+4}" y="${y0-4}" font-size="10" fill="#6b7c93">z (m)</text>`;
+  o+=`<text x="${xr+4}" y="${yE+4}" font-size="10" fill="#6b7c93">${f2(H)}</text>`;
+  // title
+  const mname=st.method==='rankine'?'Rankine':'Coulomb';
+  o+=`<text x="20" y="28" font-size="15" font-weight="700" fill="#154ea8">Esquema da cortina em balanço (sem tirantes)</text>`;
+  o+=`<text x="20" y="46" font-size="12" fill="#6b7c93">Método: ${mname} · Pa = γ·h·Ka − 2c√Ka · Pp = γ·h·Kp + 2c√Kp</text>`;
+  $('svg').innerHTML=o;
+
+  // summary
+  $('sMethod').textContent=mname;
+  $('sH').textContent=f2(H)+' m'; $('sD').textContent=f2(D)+' m';
+  $('sL').textContent=f2(total)+' m'; $('sQ').textContent=f2(q)+' kPa';
+  $('sNA').textContent=st.layersA.length; $('sNP').textContent=st.layersP.length;
+  // warnings
+  const w=[];
+  const sumA=st.layersA.slice(0,-1).reduce((a,l)=>a+l.t,0);
+  if(sumA>=total) w.push('Camadas ativas ultrapassam o comprimento total da cortina.');
+  const sumP=st.layersP.slice(0,-1).reduce((a,l)=>a+l.t,0);
+  if(sumP>=D) w.push('Camadas passivas ultrapassam a ficha.');
+  [...st.layersA,...st.layersP].forEach(l=>{ if(l.phi<0||l.phi>50||l.g<=0) w.push('Verifique φ (0–50°) e γ (>0).'); });
+  $('warn').innerHTML=[...new Set(w)].join('<br>');
+}
+
+function refresh(){ renderTables(); draw(); }
+
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.k){
+    const L=t.dataset.s==='A'?st.layersA:st.layersP;
+    const v=parseFloat(t.value);
+    L[+t.dataset.i][t.dataset.k]=isFinite(v)?v:0;
+  }
+  draw();
+});
+document.addEventListener('click',e=>{
+  const t=e.target;
+  if(t.dataset.add){
+    const L=t.dataset.add==='A'?st.layersA:st.layersP;
+    L.splice(L.length-1,0,{t:1,phi:30,c:0,g:18}); // keep last as bottom
+    refresh();
+  }
+  if(t.dataset.del){
+    const L=t.dataset.del==='A'?st.layersA:st.layersP;
+    L.splice(+t.dataset.i,1); refresh();
+  }
+  if(t.parentElement && t.parentElement.id==='method' && t.dataset.m){
+    st.method=t.dataset.m;
+    [...t.parentElement.children].forEach(b=>b.classList.toggle('on',b===t));
+    $('coulombBox').style.display=st.method==='coulomb'?'block':'none';
+    draw();
+  }
+});
+
+// save / load
+function getState(){
+  return {versao:1,method:st.method,H:num('H',5),D:num('D',4),q:num('q',0),
+    deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
+    layersA:st.layersA,layersP:st.layersP};
+}
+$('btnSave').onclick=()=>{
+  const blob=new Blob([JSON.stringify(getState(),null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='projeto-contencao.json';a.click();
+};
+$('btnLoad').onclick=()=>$('fileIn').click();
+$('fileIn').onchange=ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      st.method=d.method||'rankine'; st.layersA=d.layersA; st.layersP=d.layersP;
+      ['H','D','q','deltaA','deltaP','beta'].forEach(k=>{ if(d[k]!==undefined) $(k).value=d[k]; });
+      document.querySelectorAll('#method button').forEach(b=>b.classList.toggle('on',b.dataset.m===st.method));
+      $('coulombBox').style.display=st.method==='coulomb'?'block':'none';
+      refresh();
+    }catch(err){ alert('Arquivo inválido.'); }
+  };
+  r.readAsText(f);
+};
+$('btnCalc').onclick=()=>alert('O cálculo de empuxos entra na Etapa 2 do roadmap.');
+
+refresh();
+</script>
+</body>
+</html>
