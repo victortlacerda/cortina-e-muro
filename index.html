@@ -46,16 +46,30 @@
   .kv b{color:var(--blue-d)}
   .note{font-size:12px;color:var(--muted);line-height:1.5}
   .warn{color:var(--red);font-size:12px;margin-top:6px}
+  .chk{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;color:var(--text);line-height:1.35;cursor:pointer}
+  .chk input{margin-top:3px}
+  .res table{font-size:12px;margin-bottom:6px}
+  .res th,.res td{padding:5px 6px;text-align:right;white-space:nowrap}
+  .res th:first-child,.res td:first-child{text-align:left}
+  .res td{border-bottom:1px solid var(--line);color:var(--text);font-weight:400}
+  .res td.hi{font-weight:700;color:var(--blue-d);background:var(--blue-l)}
+  .res .tw{overflow-x:auto}
+  .res h3{font-size:13px;margin:14px 0 6px;color:var(--blue-d)}
+  .res h3:first-of-type{margin-top:0}
+  .tag2{display:inline-block;background:var(--blue-l);color:var(--blue-d);border-radius:4px;padding:0 6px;font-size:11px;margin-left:4px}
+  details{margin-top:10px}
+  summary{cursor:pointer;color:var(--blue-d);font-weight:600}
+  pre.mem{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;font:12px/1.55 ui-monospace,Consolas,monospace;overflow-x:auto;white-space:pre;margin:8px 0 0}
 </style>
 </head>
 <body>
 <header>
-  <h1>Cortinas em Balanço</h1><span class="tag">Etapa 1 · Dados e esquema</span>
+  <h1>Cortinas em Balanço</h1><span class="tag">Etapa 2 · Empuxos</span>
   <div class="sp"></div>
   <button id="btnSave">Salvar projeto</button>
   <button id="btnLoad">Abrir projeto</button>
   <input id="fileIn" type="file" accept=".json" hidden>
-  <button class="primary" id="btnCalc" title="Disponível na Etapa 2">Calcular (em breve)</button>
+  <button class="primary" id="btnCalc" title="Ir para os resultados">Ver resultados</button>
 </header>
 
 <main>
@@ -76,8 +90,15 @@
     <div class="card">
       <h2>Geometria e carga</h2>
       <div class="row"><label>Altura de contenção h</label><input type="number" id="H" value="5" step="any" min="0.5"> m</div>
-      <div class="row"><label>Ficha D (apenas desenho)</label><input type="number" id="D" value="4" step="any" min="0.5"> m</div>
+      <div class="row"><label>Ficha D (profundidade analisada)</label><input type="number" id="D" value="4" step="any" min="0.5"> m</div>
       <div class="row"><label>Sobrecarga no topo q</label><input type="number" id="q" value="10" step="any" min="0"> kPa</div>
+      <div class="row"><label>Sobrecarga no fundo da vala qp</label><input type="number" id="qP" value="0" step="any" min="0"> kPa</div>
+    </div>
+
+    <div class="card">
+      <h2>Opções de cálculo</h2>
+      <label class="chk"><input type="checkbox" id="cutTension" checked> Zerar empuxo ativo negativo (zona de tração) — Pa1 = 0 se negativo</label>
+      <label class="chk"><input type="checkbox" id="pp1zero" checked> Pp1 = 0 no nível da escavação (passivo triangular)</label>
     </div>
 
     <div class="card">
@@ -96,6 +117,7 @@
 
   <section>
     <div class="card draw"><svg id="svg" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="card res" id="results"><h2>Resultados — empuxos</h2><div id="resBody"></div></div>
   </section>
 
   <section class="right">
@@ -110,6 +132,10 @@
       <div class="kv"><span>Camadas passivas</span><b id="sNP"></b></div>
       <div id="warn" class="warn"></div>
     </div>
+    <div class="card res">
+      <h2>Valores-chave</h2>
+      <div id="keyVals"></div>
+    </div>
     <div class="card">
       <h2>Convenção</h2>
       <div class="note">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z (Etapa 4).</div>
@@ -117,6 +143,169 @@
   </section>
 </main>
 
+<script id="engine">
+/* =====================================================================
+   MOTOR DE CALCULO (sem DOM) - Etapa 2
+   Unidades: kPa, kN/m3, m, graus. z = profundidade medida para baixo.
+   ===================================================================== */
+const rad=d=>d*Math.PI/180;
+
+// Rankine (terreno horizontal, parede vertical)
+const KaRankine=phi=>Math.tan(rad(45-phi/2))**2;
+const KpRankine=phi=>Math.tan(rad(45+phi/2))**2;
+
+// Coulomb (parede vertical, alfa = 90 graus). delta = atrito solo-parede,
+// beta = inclinacao do terreno (ativo). Retorna o coeficiente "total"
+// (empuxo inclinado de delta em relacao a normal da parede).
+function KaCoulomb(phi,delta,beta){
+  const a=rad(90),p=rad(phi),d=rad(delta),b=rad(beta);
+  const inner=Math.sin(p+d)*Math.sin(p-b)/(Math.sin(a-d)*Math.sin(a+b));
+  if(!(inner>=0)) return NaN;               // phi < beta: sem solucao
+  return Math.sin(a+p)**2/(Math.sin(a)**2*Math.sin(a-d)*(1+Math.sqrt(inner))**2);
+}
+function KpCoulomb(phi,delta,beta){
+  const a=rad(90),p=rad(phi),d=rad(delta),b=rad(beta);
+  const inner=Math.sin(p+d)*Math.sin(p+b)/(Math.sin(a+d)*Math.sin(a+b));
+  if(!(inner>=0)) return NaN;
+  return Math.sin(a-p)**2/(Math.sin(a)**2*Math.sin(a+d)*(1-Math.sqrt(inner))**2);
+}
+
+// Coeficientes de uma camada: K (coef. para a parcela de peso) e Kc
+// (coef. usado em 2c*sqrt(K)).
+//  Rankine : K = Kc = Ka (ou Kp)
+//  Coulomb : K = Ka*cos(delta) (componente horizontal, parede vertical);
+//            Kc = Ka de Coulomb (simplificacao usual para a coesao)
+function coefs(method,side,phi,deltaA,deltaP,beta){
+  if(method==='rankine'){
+    const k=side==='A'?KaRankine(phi):KpRankine(phi);
+    return {K:k,Kc:k,Ktot:k};
+  }
+  if(side==='A'){
+    const k=KaCoulomb(phi,deltaA,beta);
+    return {K:k*Math.cos(rad(deltaA)),Kc:k,Ktot:k};
+  }
+  const k=KpCoulomb(phi,deltaP,0);          // escavacao horizontal
+  return {K:k*Math.cos(rad(deltaP)),Kc:k,Ktot:k};
+}
+
+// Divide a lista de camadas em intervalos [z1,z2] dentro de 0..total.
+// A ultima camada vai ate o fundo.
+function boundaries(L,total){
+  const out=[];let z=0;
+  L.forEach((l,i)=>{
+    const last=i===L.length-1;
+    const z2=last?total:Math.min(total,z+l.t);
+    if(z<total) out.push({z1:z,z2,l,i});
+    z+=l.t;
+  });
+  return out;
+}
+
+// Integra um diagrama linear por partes (lista de pontos {z,v}, podendo ter
+// saltos = dois pontos no mesmo z) entre z1 e z2.
+// Retorna {E: area (kN/m), zbar: profundidade da resultante (m)}.
+function integrate(pts,z1,z2){
+  let E=0,M=0;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    if(b.z-a.z<1e-12) continue;
+    const za=Math.max(a.z,z1),zb=Math.min(b.z,z2);
+    if(zb-za<1e-12) continue;
+    const at=z=>a.v+(b.v-a.v)*(z-a.z)/(b.z-a.z);
+    const pa=at(za),pb=at(zb),L=zb-za,area=(pa+pb)/2*L;
+    const s=pa+pb;
+    const cen=s>1e-12?za+L*(pa+2*pb)/(3*s):za+L/2;
+    E+=area;M+=area*cen;
+  }
+  return {E,zbar:E>1e-12?M/E:NaN};
+}
+
+// Valor do diagrama em z: {above,below} (iguais se nao ha salto).
+function valueAt(pts,z){
+  let above=null,below=null;
+  for(let k=0;k<pts.length-1;k++){
+    const a=pts[k],b=pts[k+1];
+    if(b.z-a.z<1e-12) continue;
+    const at=zz=>a.v+(b.v-a.v)*(zz-a.z)/(b.z-a.z);
+    if(a.z<z-1e-9&&z<=b.z+1e-9) above=at(z);
+    if(a.z<=z+1e-9&&z<b.z-1e-9) below=at(z);
+  }
+  if(above===null) above=below;
+  if(below===null) below=above;
+  return {above,below};
+}
+
+/* inp = {method,H,D,q,qP,deltaA,deltaP,beta,cutTension,pp1zero,layersA,layersP}
+   Retorna linhas de calculo (para tabela/memoria) e diagramas (pontos). */
+function calcEmpuxos(inp){
+  const {method,H,D,q,qP,deltaA,deltaP,beta,cutTension,pp1zero}=inp;
+  const total=H+D, warn=[];
+  const res={method,H,D,total,warn,rowsA:[],rowsP:[],ptsA:[],ptsP:[],kA:[],kP:[]};
+
+  /* ---------- LADO ATIVO: z de 0 (topo) ate H+D ---------- */
+  let sv=q;
+  boundaries(inp.layersA,total).filter(b=>b.z2-b.z1>1e-9).forEach(b=>{
+    const l=b.l,k=coefs(method,'A',l.phi,deltaA,deltaP,beta);
+    if(!isFinite(k.K)) warn.push(`Coulomb ativo A${b.i+1}: φ < β, sem solução.`);
+    res.kA.push({i:b.i,phi:l.phi,...k});
+    const t2c=2*l.c*Math.sqrt(k.Kc);
+    const mk=(pos,z,svz)=>{
+      const t1=svz*k.K, raw=t1-t2c;
+      return {layer:'A'+(b.i+1),pos,z,sv:svz,t1,t2c,raw,
+              val:cutTension?Math.max(0,raw):raw,K:k.K,Kc:k.Kc,c:l.c,g:l.g};
+    };
+    const top=mk('topo',b.z1,sv);
+    const svBase=sv+l.g*(b.z2-b.z1);
+    const base=mk('base',b.z2,svBase);
+    res.rowsA.push(top,base);
+    res.ptsA.push({z:top.z,v:top.val});
+    if(cutTension&&top.raw*base.raw<0){            // cruza o zero dentro da camada
+      const t=top.raw/(top.raw-base.raw);
+      const zc=b.z1+t*(b.z2-b.z1);
+      res.ptsA.push({z:zc,v:0});
+      res.z0=zc;
+    }
+    res.ptsA.push({z:base.z,v:base.val});
+    sv=svBase;
+  });
+
+  /* ---------- LADO PASSIVO: zp de 0 (nivel da escavacao) ate D ---------- */
+  let svp=qP, first=true;
+  boundaries(inp.layersP,D).filter(b=>b.z2-b.z1>1e-9).forEach(b=>{
+    const l=b.l,k=coefs(method,'P',l.phi,deltaA,deltaP,beta);
+    if(!isFinite(k.K)) warn.push(`Coulomb passivo P${b.i+1}: sem solução.`);
+    if(method==='coulomb'&&deltaP>l.phi*2/3+1e-9)
+      warn.push(`δ passivo > 2/3·φ em P${b.i+1}: Kp de Coulomb tende a superestimar.`);
+    res.kP.push({i:b.i,phi:l.phi,...k});
+    const t2c=2*l.c*Math.sqrt(k.Kc);
+    const mk=(pos,z,svz,zero)=>{
+      const t1=svz*k.K, raw=t1+t2c;
+      return {layer:'P'+(b.i+1),pos,z,sv:svz,t1,t2c,raw,
+              val:zero?0:raw,zeroed:zero,K:k.K,Kc:k.Kc,c:l.c,g:l.g};
+    };
+    const top=mk('topo',b.z1,svp,pp1zero&&first);
+    const svBase=svp+l.g*(b.z2-b.z1);
+    const base=mk('base',b.z2,svBase,false);
+    res.rowsP.push(top,base);
+    res.ptsP.push({z:top.z,v:top.val},{z:base.z,v:base.val});
+    svp=svBase;first=false;
+  });
+
+  // Resultantes
+  res.EaH=integrate(res.ptsA,0,H);            // ativo de 0 ate a escavacao
+  res.EaT=integrate(res.ptsA,0,total);        // ativo de 0 ate a ponta
+  res.EaD=integrate(res.ptsA,H,total);        // ativo ao longo da ficha
+  res.Ep =integrate(res.ptsP,0,D);            // passivo ao longo da ficha
+  res.keyA=[
+    {n:'Pa topo (z = 0)',z:0,...valueAt(res.ptsA,0)},
+    {n:'Pa no nível da escavação (z = h)',z:H,...valueAt(res.ptsA,H)},
+    {n:'Pa na ponta C (z = h + D)',z:total,...valueAt(res.ptsA,total)}];
+  res.keyP=[
+    {n:'Pp no nível da escavação',z:0,...valueAt(res.ptsP,0)},
+    {n:'Pp na ponta C (zp = D)',z:D,...valueAt(res.ptsP,D)}];
+  return res;
+}
+</script>
 <script>
 const PAL=['#fdf0c9','#d9f2d4','#d3d9f4','#f6dfe0','#e3ddf0','#ffe3c7','#d1eef2'];
 const st={
@@ -142,16 +331,87 @@ function tableRows(side){
 }
 function renderTables(){ $('tA').innerHTML=tableRows('A'); $('tP').innerHTML=tableRows('P'); }
 
-function boundaries(L,total){ // returns [{z1,z2,layer,idx}]
-  const out=[];let z=0;
-  L.forEach((l,i)=>{
-    const last=i===L.length-1;
-    const z2=last?total:Math.min(total,z+l.t);
-    if(z<total) out.push({z1:z,z2,l,i});
-    z+=l.t;
-  });
-  return out;
+/* ---------- Resultados (Etapa 2) ---------- */
+const f3=v=>isFinite(v)?v.toFixed(3).replace('.',','):'—';
+const fv=v=>(v===null||v===undefined||!isFinite(v))?'—':f2(v);
+
+function getInputs(){
+  return {method:st.method,H:Math.max(0.5,num('H',5)),D:Math.max(0.5,num('D',4)),
+    q:Math.max(0,num('q',0)),qP:Math.max(0,num('qP',0)),
+    deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
+    cutTension:$('cutTension').checked,pp1zero:$('pp1zero').checked,
+    layersA:st.layersA,layersP:st.layersP};
 }
+
+function pressureTable(rows,side){
+  const sg=side==='A'?'−':'+';
+  const head=side==='A'
+    ?'<th>Ponto</th><th>z (m)</th><th>σv (kPa)</th><th>σv·Ka (kPa)</th><th>2c√Ka (kPa)</th><th>Pa calc. (kPa)</th><th>Pa adotado (kPa)</th>'
+    :'<th>Ponto</th><th>zp (m)</th><th>σv (kPa)</th><th>σv·Kp (kPa)</th><th>2c√Kp (kPa)</th><th>Pp calc. (kPa)</th><th>Pp adotado (kPa)</th>';
+  return `<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>`+rows.map(r=>
+    `<tr><td>${r.layer} · ${r.pos}</td><td>${f2(r.z)}</td><td>${f2(r.sv)}</td><td>${f2(r.t1)}</td><td>${f2(r.t2c)}</td><td>${f2(r.raw)}</td><td class="hi">${f2(r.val)}${r.zeroed?' <span class="tag2">Pp1=0</span>':(side==='A'&&r.raw<0&&r.val===0?' <span class="tag2">tração→0</span>':'')}</td></tr>`
+  ).join('')+'</tbody></table></div>';
+}
+
+function kTable(list,side,method){
+  const kn=side==='A'?'Ka':'Kp';
+  return `<div class="tw"><table><thead><tr><th>Camada</th><th>φ (°)</th><th>${kn}${method==='coulomb'?' (Coulomb)':''}</th>${method==='coulomb'?`<th>${kn}·cos δ</th>`:''}<th>√${kn}</th></tr></thead><tbody>`+
+    list.map(k=>`<tr><td>${side}${k.i+1}</td><td>${k.phi}</td><td class="hi">${f3(k.Ktot)}</td>${method==='coulomb'?`<td>${f3(k.K)}</td>`:''}<td>${f3(Math.sqrt(k.Kc))}</td></tr>`).join('')+'</tbody></table></div>';
+}
+
+function memoria(res,inp){
+  const L=[];
+  L.push(`MÉTODO: ${res.method==='rankine'?'Rankine':'Coulomb'}   h = ${f2(res.H)} m   D = ${f2(res.D)} m   q = ${f2(inp.q)} kPa   qp = ${f2(inp.qP)} kPa`);
+  L.push('');
+  L.push('LADO ATIVO  (Pa = σv·Ka − 2c·√Ka)');
+  res.rowsA.forEach((r,i)=>{
+    L.push(`${r.layer} ${r.pos}, z = ${f2(r.z)} m`);
+    L.push(`   σv = ${f2(r.sv)} kPa`);
+    L.push(`   Pa = ${f2(r.sv)}×${f3(r.K)} − 2×${f2(r.c)}×√${f3(r.Kc)} = ${f2(r.t1)} − ${f2(r.t2c)} = ${f2(r.raw)} kPa${r.raw<0&&r.val===0?'  → adotado 0 (tração)':''}`);
+  });
+  if(res.z0!==undefined) L.push(`   (Pa = 0 em z = ${f2(res.z0)} m)`);
+  L.push('');
+  L.push('LADO PASSIVO  (Pp = σv·Kp + 2c·√Kp)  — zp medido a partir do nível da escavação');
+  res.rowsP.forEach(r=>{
+    L.push(`${r.layer} ${r.pos}, zp = ${f2(r.z)} m`);
+    L.push(`   σv = ${f2(r.sv)} kPa`);
+    L.push(`   Pp = ${f2(r.sv)}×${f3(r.K)} + 2×${f2(r.c)}×√${f3(r.Kc)} = ${f2(r.t1)} + ${f2(r.t2c)} = ${f2(r.raw)} kPa${r.zeroed?'  → adotado 0 (Pp1 = 0)':''}`);
+  });
+  return L.join('\n');
+}
+
+function renderResults(){
+  const inp=getInputs(), res=calcEmpuxos(inp);
+  window.lastRes=res;
+  let h='';
+  if(res.warn.length) h+=`<div class="warn" style="margin-bottom:8px">${[...new Set(res.warn)].join('<br>')}</div>`;
+  if(inp.method==='coulomb') h+='<div class="note" style="margin-bottom:8px">Coulomb: parede vertical (α = 90°). Parcela de peso usa Ka·cos δ (componente horizontal); a coesão usa 2c√Ka com o Ka de Coulomb. β vale só no lado ativo; o fundo da vala é horizontal.</div>';
+  h+='<h3>Coeficientes — lado ativo</h3>'+kTable(res.kA,'A',inp.method);
+  h+='<h3>Coeficientes — lado passivo</h3>'+kTable(res.kP,'P',inp.method);
+  h+='<h3>Empuxo ativo por profundidade</h3>'+pressureTable(res.rowsA,'A');
+  h+='<h3>Empuxo passivo por profundidade (a partir do nível da escavação)</h3>'+pressureTable(res.rowsP,'P');
+  h+=`<details><summary>Memória de cálculo passo a passo</summary><pre class="mem">${memoria(res,inp).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></details>`;
+  $('resBody').innerHTML=h;
+
+  // valores-chave (coluna da direita)
+  const kv=(n,v,u='kPa')=>`<div class="kv"><span>${n}</span><b>${v} ${u}</b></div>`;
+  const pair=x=>Math.abs(x.above-x.below)<0.005?fv(x.above):`${fv(x.above)} / ${fv(x.below)}`;
+  let k='';
+  res.keyA.forEach(x=>k+=kv(x.n,pair(x)));
+  res.keyP.forEach(x=>k+=kv(x.n,pair(x)));
+  k+='<div class="kv" style="border:0;padding-top:10px"><span><b>Resultantes (kN/m)</b></span><span></span></div>';
+  k+=kv(`Ea (0 → h)`,`${fv(res.EaH.E)}`,'kN/m');
+  k+=`<div class="note">atua a ${fv(res.EaH.zbar)} m do topo</div>`;
+  k+=kv(`Ea (h → h+D)`,`${fv(res.EaD.E)}`,'kN/m');
+  k+=kv(`Ea total (0 → h+D)`,`${fv(res.EaT.E)}`,'kN/m');
+  k+=`<div class="note">atua a ${fv(res.EaT.zbar)} m do topo</div>`;
+  k+=kv(`Ep (0 → D)`,`${fv(res.Ep.E)}`,'kN/m');
+  k+=`<div class="note">atua a ${fv(res.Ep.zbar)} m abaixo da escavação</div>`;
+  if(res.z0!==undefined) k+=`<div class="note">Profundidade de tração z0 = ${f2(res.z0)} m</div>`;
+  $('keyVals').innerHTML=k;
+}
+
+function update(){ draw(); renderResults(); }
 
 function draw(){
   const H=Math.max(0.5,num('H',5)), D=Math.max(0.5,num('D',4)), q=Math.max(0,num('q',0));
