@@ -17,7 +17,7 @@ DECISOES DE ARQUITETURA
 - Unidades: kN, m, kPa, kN/m3, graus.
 
 ---------------------------------------------------------------------
-ETAPA 1 - Interface e desenho esquemático  [x]
+ETAPA 1 - Interface e desenho esquematico  [x]
 ---------------------------------------------------------------------
 [x] Layout base azul/branco (barra superior, abas, painel de inputs,
     area de desenho)
@@ -35,39 +35,61 @@ ETAPA 1 - Interface e desenho esquemático  [x]
 [x] Salvar/carregar projeto em arquivo .json
 
 ---------------------------------------------------------------------
-ETAPA 2 - Motor de calculo de empuxos  [ ]
+ETAPA 2 - Motor de calculo de empuxos  [x]
 ---------------------------------------------------------------------
-[ ] Ka e Kp por Rankine (terreno horizontal, parede vertical)
-[ ] Ka e Kp por Coulomb (delta, beta, alfa da parede)
-[ ] Tensao horizontal ativa e passiva por camada (com coesao:
-    sigma_a = sigma_v*Ka - 2c*sqrt(Ka); sigma_p = sigma_v*Kp +
-    2c*sqrt(Kp))
-[ ] Efeito da sobrecarga uniforme no topo
-[ ] Zona de tracao (corte da tensao negativa) - opcao do usuario
-[ ] Tabela de resultados por profundidade
-[ ] Validacao com exemplos de livro (conferir manualmente)
+[x] Ka e Kp por Rankine (terreno horizontal, parede vertical)
+[x] Ka e Kp por Coulomb (parede vertical, delta ativo/passivo, beta so
+    no lado ativo). Parcela de peso usa K*cos(delta) (componente
+    horizontal); coesao usa 2c*raiz(K de Coulomb). Conferido: com
+    delta=0 e beta=0 da o mesmo que Rankine
+[x] Tensao horizontal ativa e passiva por camada, com coesao:
+    Pa = sv*Ka - 2c*raiz(Ka) ;  Pp = sv*Kp + 2c*raiz(Kp)
+[x] Sobrecarga q no topo (ativo) e qp no fundo da vala (passivo)
+[x] Opcao: zerar Pa negativo (zona de tracao), com profundidade z0
+[x] Opcao: Pp1 = 0 no nivel da escavacao (passivo triangular, como na
+    folha manuscrita)
+[x] Tabelas por camada (topo/base) com sigma_v, parcelas e valor
+    adotado + memoria de calculo passo a passo
+[x] Resultantes Ea (0->h, h->h+D, total) e Ep, com ponto de aplicacao
+[x] Testes automaticos contra contas independentes (Rankine, coesao,
+    tracao, multicamadas, Coulomb) - todos OK
+[ ] Validar com o exemplo manual do usuario (PENDENTE: usuario vai
+    conferir e passar divergencias)
+Pontos a confirmar com o usuario:
+  - Pp1=0: hoje o passivo vai linear de 0 (topo da 1a camada) ate o valor
+    calculado na base da camada (a coesao no topo e desprezada)
+  - Pa em camadas com coesao: tensao negativa so e zerada se a opcao
+    estiver marcada
+  - Coulomb: simplificacao da coesao e componente horizontal (acima)
 
 ---------------------------------------------------------------------
-ETAPA 3 - Graficos de empuxo, cortante e momento  [ ]
+ETAPA 3 - Graficos de empuxo, cortante e momento  [x]
 ---------------------------------------------------------------------
-[ ] Diagrama de empuxo (ativo, passivo, resultante)
-[ ] Diagrama de esforco cortante V(z)
-[ ] Diagrama de momento fletor M(z)
-[ ] Valores maximos destacados (Vmax, Mmax e profundidade)
-[ ] Graficos ao lado do desenho, estilo GEO5
+[x] Diagrama de empuxo (ativo a direita, passivo a esquerda) e diagrama
+    de empuxo LIQUIDO (ativo - passivo)
+[x] Diagrama de esforco cortante V(z) (integral exata por trecho)
+[x] Diagrama de momento fletor M(z)
+[x] Mmax (onde V = 0) e Vmax destacados com profundidade
+[x] Linhas de referencia: escavacao, ponto de giro O e ponta C
+[x] Aba "Diagramas" ao lado do desenho
+    Obs.: Vmax = maior |V| ate a secao de Mmax. O V residual na ponta C
+    e mostrado a parte (a reacao residual e coberta pelo +20% da ficha)
+    Obs.: valores por metro linear de cortina (kN/m e kN.m/m)
 
 ---------------------------------------------------------------------
-ETAPA 4 - Dimensionamento da ficha (cortina/estaca em balanco) [ ]
+ETAPA 4 - Dimensionamento da ficha (cortina/estaca em balanco) [x]
 ---------------------------------------------------------------------
 METODO DA FOLHA MANUSCRITA DO USUARIO (cortina em balanco, SEM tirantes)
   Pa = gama*h*Ka - 2c*raiz(Ka)        Pp = gama*h*Kp + 2c*raiz(Kp)
   Ka = tg2(45 - phi/2)                Kp = tg2(45 + phi/2)
   Pa1 (topo): se negativo, considerar zero (depende da sobrecarga)
   Pp1 (nivel da escavacao) = 0
-  Pa2A / Pa2B: empuxo ativo no nivel da escavacao (camada de cima / de baixo)
+  Pa2A / Pa2B: empuxo ativo no nivel da escavacao (acima / abaixo da
+  interface de camadas, se houver)
   Pp2 e Pa3: passivo e ativo na ponta C
   Ppe = Pp2 - Pa3   (passivo liquido na ponta C)
-  x'  -> profundidade abaixo da escavacao onde Ppe = 0 (PONTO DE GIRO O)
+  x'  -> profundidade abaixo da escavacao onde o liquido se anula
+         (PONTO DE GIRO O)
   x   -> distancia O-C, obtida de  soma(Mc) = 0:
          E1*y1 + E2*y2 - E3*y3 = 0
   Z = x + x'
@@ -75,13 +97,46 @@ METODO DA FOLHA MANUSCRITA DO USUARIO (cortina em balanco, SEM tirantes)
   Sentido: escavacao (passivo) a esquerda, solo contido + sobrecarga
   (ativo) a direita.
 
-[ ] Diagrama de pressoes ativo/passivo com Pa1, Pa2A, Pa2B, Pa3, Pp2, Ppe
-[ ] Calculo de x' (ponto de giro) com camadas multiplas
-[ ] Calculo de x por equilibrio de momentos em C (E1,y1; E2,y2; E3,y3)
-[ ] Z = x + x' e ficha de projeto = 1,2 Z (fator editavel)
-[ ] Opcao: fator de seguranca no empuxo passivo (ex.: 1,5)
-[ ] Resumo: ficha teorica x ficha adotada, comprimento total
-[ ] Conferir resultado com exemplo resolvido a mao pelo usuario
+IMPLEMENTADO:
+[x] Z obtido numericamente de soma(Mc)=0 (a ponta C muda o proprio
+    diagrama, entao a equacao e nao linear; resolvido por varredura +
+    bisecao, serve para multiplas camadas, coesao e sobrecarga)
+[x] x' (ponto de giro) com camadas multiplas
+[x] E1, E2, E3 e bracos y1, y2, y3 em relacao a C; conferencia
+    E1*y1 + E2*y2 - E3*y3 = 0
+[x] Pa1, Pa2A, Pa2B, Pa3, Pp1, Pp2, Ppe na notacao da folha
+[x] Ficha de projeto = fator*Z (fator editavel, padrao 1,2)
+[x] Fator de seguranca opcional no passivo (padrao 1,0 = sem reducao)
+[x] Resumo: ficha teorica x projeto, comprimento total, Mmax, Vmax
+[x] Botao "Usar ficha de projeto em D" e marcadores O / C / ficha de
+    projeto no desenho esquematico
+[x] Testes: areia homogenea com solucao fechada (Z = h/(9^(1/3)-1),
+    x' = h/8, Mmax = 281,25 kN.m/m), FS no passivo, sobrecarga e um caso
+    multicamadas com coesao conferido por integracao numerica
+    independente - todos OK
+[x] Conferido com o exemplo manual do usuario (h=3, q=10, A1 phi15 c10
+    g17 / A2 phi35 g19 / P1 phi35 g19): folha x=2,17 ; Z=2,42 ; ficha
+    1,2Z=2,9 ~ 3 m  ->  app x=2,170 ; Z=2,424 ; ficha 2,91 m  (OK)
+    CAUSA da divergencia inicial: a folha desenha o ativo como TRIANGULO
+    de 0 (topo) ate Pa21 (E1 = 20,62*3/2 = 30,9), enquanto o app cortava
+    na profundidade real de tracao z0 = 0,94 m (E1 = 21,1 -> Z = 2,04).
+    Agora a opcao "Pa1 = 0: triangulo de 0 no topo ate Pa2" vem MARCADA
+    (padrao = folha). Desmarcada = corte exato em z0 (menos conservador).
+[x] Esquema com os pontos de atuacao: setas e valores de Pa1, Pa2A, Pa2B,
+    Pa3 (lado ativo) e Pp1, Pp2, Ppe (lado passivo) + linhas de O, C e
+    ficha de projeto; o desenho passa a cobrir a ficha de projeto
+[x] Abas dos resultados: Empuxos | Ficha | Diagramas (sem "Etapa")
+[x] Corrigido: salvar projeto agora grava fator da ficha, FS do passivo e
+    a opcao Pa1 linear
+Pontos a confirmar com o usuario:
+  - Pa2A x Pa2B: valor acima / abaixo da interface de camadas no nivel
+    da escavacao (CONFIRMADO pela folha: Pa21 = 20,62 e Pa22 = 16,47)
+  - E2 e E3 sao areas do diagrama LIQUIDO (ativo - passivo), como na
+    folha; com camadas diferentes o liquido deixa de ser um triangulo
+    perfeito, mas as areas e bracos sao exatos
+  - Se o seu exemplo usa Pp com coesao no topo, desmarcar "Pp1 = 0"
+  - Pa1 linear vale so para a 1a camada (topo da cortina); camadas mais
+    abaixo com Pa negativo continuam cortando no ponto exato de zero
 
 ---------------------------------------------------------------------
 ETAPA 5 - Muro de contencao (gravidade / flexao)  [ ]
@@ -135,3 +190,6 @@ BANCO DE IDEIAS (nao perder)
 - Visual semelhante ao GEO5 (modos na lateral, resultados a direita)
 - Possivel modo escuro (baixa prioridade)
 - Biblioteca de solos tipicos salva pelo usuario
+- Estacas espacadas/secantes: esforco por estaca = valor por metro x
+  espacamento; largura efetiva do passivo (ex.: 3 x diametro)
+- Coef. de reducao do empuxo passivo estilo GEO5 (ja existe FS no passivo)

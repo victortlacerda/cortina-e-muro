@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Contenções - Etapa 1</title>
+<title>Contenções - Cortina em balanço</title>
 <style>
   :root{
     --blue:#1f6feb; --blue-d:#154ea8; --blue-l:#e8f1fe; --blue-m:#cfe0fb;
@@ -54,17 +54,32 @@
   .res td{border-bottom:1px solid var(--line);color:var(--text);font-weight:400}
   .res td.hi{font-weight:700;color:var(--blue-d);background:var(--blue-l)}
   .res .tw{overflow-x:auto}
+  .res th.l,.res td.l{text-align:left}
   .res h3{font-size:13px;margin:14px 0 6px;color:var(--blue-d)}
   .res h3:first-of-type{margin-top:0}
   .tag2{display:inline-block;background:var(--blue-l);color:var(--blue-d);border-radius:4px;padding:0 6px;font-size:11px;margin-left:4px}
   details{margin-top:10px}
   summary{cursor:pointer;color:var(--blue-d);font-weight:600}
   pre.mem{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;font:12px/1.55 ui-monospace,Consolas,monospace;overflow-x:auto;white-space:pre;margin:8px 0 0}
+  .tabs{display:flex;gap:4px;margin:-4px 0 14px;border-bottom:2px solid var(--blue-m);flex-wrap:wrap}
+  .tabs button{border:0;border-radius:6px 6px 0 0;background:transparent;padding:8px 14px;color:var(--muted);font-weight:600}
+  .tabs button:hover{background:var(--blue-l);color:var(--blue-d)}
+  .tabs button.on{background:var(--blue);color:#fff}
+  .pane[hidden]{display:none}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--blue-l)}
+  .stat small{display:block;color:var(--muted);font-size:11px;line-height:1.3}
+  .stat b{font-size:22px;color:var(--blue-d);display:block;margin:2px 0}
+  .stat.main{background:var(--blue);border-color:var(--blue)}
+  .stat.main small,.stat.main b{color:#fff}
+  .charts{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media(max-width:1100px){.charts{grid-template-columns:1fr}}
+  .chart{border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff}
 </style>
 </head>
 <body>
 <header>
-  <h1>Cortinas em Balanço</h1><span class="tag">Etapa 2 · Empuxos</span>
+  <h1>Cortinas em Balanço</h1><span class="tag">Etapas 2–4 · Empuxos, diagramas e ficha</span>
   <div class="sp"></div>
   <button id="btnSave">Salvar projeto</button>
   <button id="btnLoad">Abrir projeto</button>
@@ -98,7 +113,10 @@
     <div class="card">
       <h2>Opções de cálculo</h2>
       <label class="chk"><input type="checkbox" id="cutTension" checked> Zerar empuxo ativo negativo (zona de tração) — Pa1 = 0 se negativo</label>
+      <label class="chk"><input type="checkbox" id="paLinear" checked> Pa1 = 0: diagrama ativo em triângulo de 0 (topo) até Pa2, como na folha. Desmarcado: corta na profundidade real de tração z0</label>
       <label class="chk"><input type="checkbox" id="pp1zero" checked> Pp1 = 0 no nível da escavação (passivo triangular)</label>
+      <div class="row"><label>Fator da ficha de projeto (× Z)</label><input type="number" id="fichaF" value="1.2" step="any" min="1"></div>
+      <div class="row"><label>FS aplicado ao empuxo passivo</label><input type="number" id="fsP" value="1" step="any" min="1"></div>
     </div>
 
     <div class="card">
@@ -116,8 +134,17 @@
   </section>
 
   <section>
-    <div class="card draw"><svg id="svg" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
-    <div class="card res" id="results"><h2>Resultados — empuxos</h2><div id="resBody"></div></div>
+    <div class="card draw"><svg id="svg" viewBox="0 0 880 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="card res" id="results"><h2>Resultados</h2>
+      <div class="tabs" id="tabs">
+        <button data-tab="emp" class="on">Empuxos</button>
+        <button data-tab="ficha">Ficha</button>
+        <button data-tab="diag">Diagramas</button>
+      </div>
+      <div class="pane" id="pane-emp"></div>
+      <div class="pane" id="pane-ficha" hidden></div>
+      <div class="pane" id="pane-diag" hidden></div>
+    </div>
   </section>
 
   <section class="right">
@@ -133,12 +160,16 @@
       <div id="warn" class="warn"></div>
     </div>
     <div class="card res">
+      <h2>Dimensionamento</h2>
+      <div id="dimBody"></div>
+    </div>
+    <div class="card res">
       <h2>Valores-chave</h2>
       <div id="keyVals"></div>
     </div>
     <div class="card">
       <h2>Convenção</h2>
-      <div class="note">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z (Etapa 4).</div>
+      <div class="note">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z.</div>
     </div>
   </section>
 </main>
@@ -205,19 +236,18 @@ function boundaries(L,total){
 // saltos = dois pontos no mesmo z) entre z1 e z2.
 // Retorna {E: area (kN/m), zbar: profundidade da resultante (m)}.
 function integrate(pts,z1,z2){
-  let E=0,M=0;
+  let E=0,Mt=0;                    // Mt = primeiro momento em relacao ao topo (z=0)
   for(let k=0;k<pts.length-1;k++){
     const a=pts[k],b=pts[k+1];
     if(b.z-a.z<1e-12) continue;
     const za=Math.max(a.z,z1),zb=Math.min(b.z,z2);
     if(zb-za<1e-12) continue;
     const at=z=>a.v+(b.v-a.v)*(z-a.z)/(b.z-a.z);
-    const pa=at(za),pb=at(zb),L=zb-za,area=(pa+pb)/2*L;
-    const s=pa+pb;
-    const cen=s>1e-12?za+L*(pa+2*pb)/(3*s):za+L/2;
-    E+=area;M+=area*cen;
+    const pa=at(za),pb=at(zb),L=zb-za;
+    E+=(pa+pb)/2*L;
+    Mt+=L*(za*(pa+pb)/2+L*(pa+2*pb)/6);   // integral exata de z*p(z)
   }
-  return {E,zbar:E>1e-12?M/E:NaN};
+  return {E,Mt,zbar:E>1e-12?Mt/E:NaN};
 }
 
 // Valor do diagrama em z: {above,below} (iguais se nao ha salto).
@@ -243,7 +273,7 @@ function calcEmpuxos(inp){
   const res={method,H,D,total,warn,rowsA:[],rowsP:[],ptsA:[],ptsP:[],kA:[],kP:[]};
 
   /* ---------- LADO ATIVO: z de 0 (topo) ate H+D ---------- */
-  let sv=q;
+  let sv=q, firstA=true;
   boundaries(inp.layersA,total).filter(b=>b.z2-b.z1>1e-9).forEach(b=>{
     const l=b.l,k=coefs(method,'A',l.phi,deltaA,deltaP,beta);
     if(!isFinite(k.K)) warn.push(`Coulomb ativo A${b.i+1}: φ < β, sem solução.`);
@@ -259,14 +289,19 @@ function calcEmpuxos(inp){
     const base=mk('base',b.z2,svBase);
     res.rowsA.push(top,base);
     res.ptsA.push({z:top.z,v:top.val});
-    if(cutTension&&top.raw*base.raw<0){            // cruza o zero dentro da camada
+    // Pa1 negativo na 1a camada: com paLinear (padrao da folha) o diagrama
+    // parte de Pa1 = 0 no topo e vai em linha reta ate o valor da base;
+    // sem paLinear corta no ponto exato em que o empuxo zera (z0).
+    const linearTop=!!(cutTension&&inp.paLinear&&firstA&&top.raw<0);
+    if(linearTop) res.linearTop=true;
+    if(cutTension&&top.raw*base.raw<0&&!linearTop){  // cruza o zero dentro da camada
       const t=top.raw/(top.raw-base.raw);
       const zc=b.z1+t*(b.z2-b.z1);
       res.ptsA.push({z:zc,v:0});
       res.z0=zc;
     }
     res.ptsA.push({z:base.z,v:base.val});
-    sv=svBase;
+    sv=svBase;firstA=false;
   });
 
   /* ---------- LADO PASSIVO: zp de 0 (nivel da escavacao) ate D ---------- */
@@ -305,6 +340,320 @@ function calcEmpuxos(inp){
     {n:'Pp na ponta C (zp = D)',z:D,...valueAt(res.ptsP,D)}];
   return res;
 }
+
+/* =====================================================================
+   ETAPA 3 e 4 - Ficha de cortina em balanco (sem tirantes) e perfis V, M
+   Metodo da folha manuscrita:
+     Pp1 = 0 ; Ppe = Pp2 - Pa3 ; x' : onde Ppe = 0 (ponto de giro O)
+     x : de  soma(Mc) = 0  ->  E1*y1 + E2*y2 - E3*y3 = 0
+     Z = x + x'  ;  ficha de projeto = fator * Z (1,2)
+   ===================================================================== */
+const scalePts=(pts,f)=>pts.map(p=>({z:p.z,v:p.v*f}));
+// momento, em relacao a zRef, de uma resultante integrada acima de zRef
+const armMom=(r,zRef)=>r.E*zRef-r.Mt;
+
+// Corta um diagrama em zmax (interpolando)
+function clipPts(pts,zmax){
+  const out=[];
+  for(let k=0;k<pts.length;k++){
+    const p=pts[k];
+    if(p.z<=zmax+1e-9){out.push(p);continue;}
+    const a=pts[k-1];
+    if(a&&p.z-a.z>1e-12&&a.z<zmax-1e-9)
+      out.push({z:zmax,v:a.v+(p.v-a.v)*(zmax-a.z)/(p.z-a.z)});
+    break;
+  }
+  return out;
+}
+
+// Soma(Mc) para uma ficha Z: ativo (0..h+Z) menos passivo (0..Z), em C.
+function momentC(ptsA,ptsP,H,Z){
+  const zC=H+Z, a=integrate(ptsA,0,zC), p=integrate(ptsP,0,Z);
+  return armMom(a,zC)-armMom(p,Z);
+}
+
+function bisect(fn,lo,hi,it=70){          // fn(lo)>0, fn(hi)<=0
+  for(let k=0;k<it;k++){const m=(lo+hi)/2; if(fn(m)>0) lo=m; else hi=m;}
+  return (lo+hi)/2;
+}
+
+/* inp: mesmas entradas de calcEmpuxos. FSp: fator de seguranca aplicado ao
+   empuxo passivo (1 = sem reducao). factor: multiplicador da ficha (1,2). */
+function solveFicha(inp,FSp=1,factor=1.2){
+  const H=inp.H, Dbig=Math.max(40,6*H);
+  const big=calcEmpuxos({...inp,D:Dbig});
+  const ptsA=big.ptsA, ptsP=scalePts(big.ptsP,1/(FSp>0?FSp:1));
+  const out={ok:false,warn:[...big.warn],ptsA,ptsP,H,FSp,factor};
+  const f=Z=>momentC(ptsA,ptsP,H,Z);
+
+  if(f(0)<=1e-9){
+    out.warn.push('Não há empuxo ativo acima da escavação: ficha teórica = 0.');
+    return out;
+  }
+  // 1) Z: primeira raiz de soma(Mc)=0
+  let a=0,Z=null;
+  for(let z=0.01;z<=Dbig+1e-9;z+=0.01){
+    if(f(z)<=0){Z=bisect(f,a,z);break;}
+    a=z;
+  }
+  if(Z===null){
+    out.warn.push(`Sem equilíbrio de momentos até ${Dbig.toFixed(0)} m de ficha — verifique os parâmetros (passivo muito baixo).`);
+    return out;
+  }
+  const zC=H+Z;
+
+  // 2) x': profundidade (abaixo da escavacao) onde o empuxo liquido se anula
+  const net=zp=>valueAt(ptsA,H+zp).below-valueAt(ptsP,zp).below;
+  let xp=0;
+  if(net(0)>1e-9){
+    xp=Z;let prev=0;
+    for(let zp=0.005;zp<=Z+1e-9;zp+=0.005){
+      if(net(zp)<=0){xp=bisect(net,prev,zp);break;}
+      prev=zp;
+    }
+  }
+  const x=Z-xp;
+
+  // 3) resultantes e bracos em relacao a C
+  const A1=integrate(ptsA,0,H);
+  const M1=armMom(A1,zC), E1=A1.E, y1=E1>1e-12?M1/E1:NaN;
+  const A2=integrate(ptsA,H,H+xp), P2=integrate(ptsP,0,xp);
+  const E2=A2.E-P2.E, M2=armMom(A2,zC)-armMom(P2,Z), y2=Math.abs(E2)>1e-12?M2/E2:NaN;
+  const A3=integrate(ptsA,H+xp,zC), P3=integrate(ptsP,xp,Z);
+  const E3=P3.E-A3.E, M3=armMom(P3,Z)-armMom(A3,zC), y3=Math.abs(E3)>1e-12?M3/E3:NaN;
+
+  const Pa1=valueAt(ptsA,0).below;
+  const kA2=valueAt(ptsA,H), Pp1=valueAt(ptsP,0).below;
+  const Pa3=valueAt(ptsA,zC).above, Pp2=valueAt(ptsP,Z).above;
+  Object.assign(out,{ok:true,Z,x,xp,zC,Zproj:factor*Z,L:H+factor*Z,
+    Pa1,Pa2A:kA2.above,Pa2B:kA2.below,Pa3,Pp1,Pp2,Ppe:Pp2-Pa3,
+    E1,y1,E2,y2,E3,y3,M1,M2,M3,resid:M1+M2-M3});
+  if(out.Ppe<=0) out.warn.push('Ppe ≤ 0 na ponta: resultado de ficha duvidoso.');
+  return out;
+}
+
+/* Perfis exatos (analiticos por trecho) de empuxo liquido n(z), cortante V(z)
+   e momento M(z) ao longo da cortina de 0 ate zEnd (ponta C).
+   n = Pa(z) - Pp(z-h) (passivo so abaixo da escavacao).
+   V(z) = integral de n ; M(z) = integral de V  (kN/m e kN.m/m). */
+function perfis(ptsA,ptsP,H,zEnd,extra=[],nsub=60){
+  const B=[0,H,zEnd,...extra];
+  ptsA.forEach(p=>B.push(p.z));
+  ptsP.forEach(p=>B.push(p.z+H));
+  const sorted=B.filter(z=>z>=-1e-9&&z<=zEnd+1e-9).sort((u,v)=>u-v);
+  const bs=[sorted[0]];
+  sorted.slice(1).forEach(z=>{if(z-bs[bs.length-1]>1e-7) bs.push(z);});
+  const netPts=[],S=[];let V=0,M=0;
+  for(let i=0;i<bs.length-1;i++){
+    const z0=bs[i],z1=bs[i+1],L=z1-z0;
+    const n0=valueAt(ptsA,z0).below-(z0>=H-1e-9?valueAt(ptsP,Math.max(0,z0-H)).below:0);
+    const n1=valueAt(ptsA,z1).above-(z1>H+1e-9?valueAt(ptsP,z1-H).above:0);
+    const s=(n1-n0)/L;
+    netPts.push({z:z0,v:n0},{z:z1,v:n1});
+    for(let k=0;k<=nsub;k++){
+      const t=L*k/nsub;
+      S.push({z:z0+t,n:n0+s*t,V:V+n0*t+s*t*t/2,M:M+V*t+n0*t*t/2+s*t*t*t/6});
+    }
+    const Mn=M+V*L+n0*L*L/2+s*L*L*L/6, Vn=V+n0*L+s*L*L/2;
+    M=Mn;V=Vn;
+  }
+  // extremos: Mmax onde V=0 ; Vmax = maior |V| ate a secao de Mmax
+  // (abaixo dela o V cresce so por causa da reacao residual em C, que o
+  //  metodo simplificado cobre com o acrescimo de 20% na ficha)
+  let jM=0;
+  S.forEach((p,j)=>{ if(Math.abs(p.M)>Math.abs(S[jM].M)) jM=j; });
+  let zM=S[jM].z,Mmax=S[jM].M;
+  for(const q of [jM-1,jM+1]){
+    const a=S[jM],b=S[q];
+    if(b&&a.V*b.V<0){
+      const zs=a.z+(b.z-a.z)*a.V/(a.V-b.V);
+      zM=zs;Mmax=a.M+a.V*(zs-a.z)/2;break;
+    }
+  }
+  let jV=0;
+  S.forEach((p,j)=>{ if(p.z<=zM+1e-9&&Math.abs(p.V)>Math.abs(S[jV].V)) jV=j; });
+  return {S,netPts,V:S[S.length-1].V,M:S[S.length-1].M,
+    Vmax:S[jV].V,zVmax:S[jV].z,Mmax,zMmax:zM};
+}
+
+/* =====================================================================
+   ETAPA 5 - MURO DE CONTENCAO (gravidade e flexao)
+   Por metro linear de muro. Eixos:
+     x : a partir da PONTA (frente do muro), positivo para o aterro
+     y : a partir da BASE, positivo para cima
+     z : profundidade a partir do topo do aterro (z = Hw - y)
+   Plano de empuxo: vertical em x = B (fundo do talao, ou costas do muro
+   de gravidade). O empuxo vem de calcEmpuxos() sobre 0..Hw e o passivo
+   frontal de 0..D (D = embutimento da base abaixo do nivel da escavacao).
+   ===================================================================== */
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+
+// camada que contem a profundidade z (a ultima vai ate o fundo)
+function layerAtDepth(L,z){
+  let t=0;
+  for(let i=0;i<L.length;i++){
+    if(z<t+L[i].t-1e-12||i===L.length-1) return {l:L[i],i,top:t};
+    t+=L[i].t;
+  }
+}
+// integral de gama dz de 0 ate z (kPa)
+const soilColumn=(L,z)=>boundaries(L,z).reduce((a,b)=>a+b.l.g*(b.z2-b.z1),0);
+
+function wallGeom(w,H,D){
+  const grav=w.type==='gravidade', Hw=H+D, bt=w.bt, bb=w.bb;
+  const hs=grav?0:w.hs, lt=grav?0:w.lt, lh=grav?0:w.lh;
+  return {type:w.type,grav,Hw,bt,bb,hs,lt,lh,B:lt+bb+lh,hst:Hw-hs,gm:w.gm,
+          xb:lt+bb,xf:lt+bb-bt};
+}
+
+// partes do corpo do muro (pesos proprios e centroides)
+function wallParts(G){
+  const P=[],{bt,bb,hs,lt,hst,gm,B}=G, bf=bb-bt, nm=G.grav?'Muro':'Fuste';
+  if(hs>1e-9) P.push({name:'Sapata',W:gm*B*hs,x:B/2,y:hs/2});
+  if(bt*hst>1e-12) P.push({name:`${nm} (parte retangular)`,W:gm*bt*hst,x:lt+bb-bt/2,y:hs+hst/2});
+  if(bf>1e-9) P.push({name:`${nm} (parte triangular)`,W:gm*bf*hst/2,x:lt+2*bf/3,y:hs+hst/3});
+  P.forEach((p,i)=>p.id='W'+(i+1));
+  return P;
+}
+
+// Distribuicao de tensoes na base. N (kN/m), xR (m da ponta), B (m).
+// Retorna pts = [{z:x, v:sigma}] para integrar com integrate().
+function baseStress(N,xR,B){
+  const e=B/2-xR, r={N,xR,e,B};
+  if(!(N>0)||!(xR>0)||!(xR<B)){r.ok=false;return r;}
+  r.ok=true;
+  if(Math.abs(e)<=B/6+1e-9){
+    r.kern=true;r.Lc=B;
+    r.sigToe=N/B*(1+6*e/B);r.sigHeel=N/B*(1-6*e/B);
+    r.pts=[{z:0,v:r.sigToe},{z:B,v:r.sigHeel}];
+  }else if(e>0){
+    r.kern=false;r.Lc=3*xR;r.sigToe=2*N/r.Lc;r.sigHeel=0;
+    r.pts=[{z:0,v:r.sigToe},{z:r.Lc,v:0},{z:B,v:0}];
+  }else{
+    r.kern=false;r.Lc=3*(B-xR);r.sigToe=0;r.sigHeel=2*N/r.Lc;
+    r.pts=[{z:0,v:0},{z:B-r.Lc,v:0},{z:B,v:r.sigHeel}];
+  }
+  r.sigMax=Math.max(r.sigToe,r.sigHeel);r.sigMin=Math.min(r.sigToe,r.sigHeel);
+  return r;
+}
+
+// Capacidade de carga - Meyerhof (1963), sapata corrida, carga inclinada e
+// excentrica (largura efetiva Bp = B - 2e)
+function bearingMeyerhof(p){
+  const {phi,c,gam,Bp,Df,qo,N,Hh}=p;
+  const t=Math.tan(rad(phi)), Kp=Math.tan(rad(45+phi/2))**2, sK=Math.sqrt(Kp);
+  const Nq=Math.exp(Math.PI*t)*Kp;
+  const Nc=phi>0?(Nq-1)/t:5.14;
+  const Ng=(Nq-1)*Math.tan(rad(1.4*phi));
+  const r=Bp>0?Df/Bp:0;
+  const dc=1+0.2*sK*r, dq=phi>=10?1+0.1*sK*r:1, dg=dq;
+  const theta=Math.atan2(Math.max(Hh,0),N)*180/Math.PI;
+  const iq=(1-theta/90)**2, ic=iq, ig=(phi>0&&theta<phi)?(1-theta/phi)**2:0;
+  const qult=c*Nc*dc*ic+qo*Nq*dq*iq+0.5*gam*Bp*Ng*dg*ig;
+  const sig=N/Bp;
+  return {phi,c,gam,Bp,Df,qo,N,Hh,Nq,Nc,Ng,dc,dq,dg,ic,iq,ig,theta,qult,sig,
+          FS:sig>0?qult/sig:Infinity};
+}
+
+/* inp = entradas de calcEmpuxos (com D = embutimento);
+   w = {type,bt,bb,hs,lt,lh,gm,fracP,kdelta,kadh,qHeelStab,useQo,FSt,FSd,FSc,gammaF} */
+function solveWall(inp,w){
+  const H=inp.H,D=inp.D,warn=[], n2=v=>v.toFixed(2).replace('.',',');
+  const G=wallGeom(w,H,D), out={ok:false,G,w,warn};
+  if(!(G.bb>0)||!(G.bt>0)){warn.push('Informe larguras do muro (topo e base) maiores que zero.');return out;}
+  if(G.bt>G.bb+1e-9) warn.push('Largura do topo maior que a da base do fuste.');
+  if(G.hst<=1e-9){warn.push('A sapata é mais alta que o muro (h + D). Reduza hs ou aumente D.');return out;}
+  if(!G.grav&&D<G.hs-1e-9) warn.push('Embutimento D menor que a espessura da sapata: a sapata fica acima do nível da escavação.');
+  if(inp.method==='coulomb'&&Math.abs(inp.beta)>1e-9)
+    warn.push('β ≠ 0: o peso do solo sobre o talão considera terreno horizontal (aproximação); β entra só no Ka de Coulomb.');
+
+  const E=calcEmpuxos({...inp,D}); E.warn.forEach(x=>warn.push(x));
+  const A=integrate(E.ptsA,0,G.Hw), P=integrate(E.ptsP,0,D);
+  const Eh=A.E, ya=Eh>1e-9?G.Hw-A.zbar:0;
+  const Ep0=P.E, Epu=w.fracP*Ep0, yp=Ep0>1e-9?D-P.zbar:0;
+  const tanA=inp.method==='coulomb'?Math.tan(rad(inp.deltaA)):0;
+  const Ev=Eh*tanA;
+
+  // ---- forcas verticais (por metro) ----
+  const F=wallParts(G).map(p=>({...p,stab:true,kind:'muro'}));
+  const zs=G.Hw-G.hs, svCol=soilColumn(inp.layersA,zs), xh=G.xb+G.lh/2;
+  if(G.lh>1e-9){
+    F.push({id:'Ws',name:'Solo sobre o talão',W:svCol*G.lh,x:xh,y:G.hs+zs/2,stab:true,kind:'solo'});
+    if(inp.q>0) F.push({id:'Wq',name:'Sobrecarga sobre o talão',W:inp.q*G.lh,x:xh,y:G.Hw,stab:!!w.qHeelStab,kind:'q'});
+  }
+  F.forEach(f=>f.M=f.W*f.x);
+  const sumW=a=>a.reduce((s,f)=>s+f.W,0), sumM=a=>a.reduce((s,f)=>s+f.M,0);
+  const Fst=F.filter(f=>f.stab), Wst=sumW(Fst), Mw=sumM(Fst);
+
+  // ---- tombamento (em torno da ponta, x = 0) ----
+  const Mest=Mw+Ev*G.B+Epu*yp, Mover=Eh*ya;
+  const tomb={Mw,MEv:Ev*G.B,MEp:Epu*yp,Mest,Mover,FS:Mover>1e-9?Mest/Mover:Infinity};
+
+  // ---- deslizamento na base ----
+  const bs=layerAtDepth(inp.layersP,D+1e-6), phiB=bs.l.phi, cB=bs.l.c, gB=bs.l.g;
+  const delta=w.kdelta*phiB, tanD=Math.tan(rad(delta));
+  const Ns=Wst+Ev, Fatr=Ns*tanD, Fad=w.kadh*cB*G.B, Fres=Fatr+Fad+Epu;
+  const desl={Ns,phiB,cB,gB,delta,tanD,Fatr,Fad,Fp:Epu,Fres,Eh,FS:Eh>1e-9?Fres/Eh:Infinity,layer:'P'+(bs.i+1)};
+
+  // ---- tensoes na base (cargas reais: inclui sobrecarga sobre o talao) ----
+  const Wall=sumW(F), Mall=sumM(F);
+  const N=Wall+Ev, Mv=Mall+Ev*G.B, Mh=Eh*ya-Epu*yp;
+  const base=baseStress(N,(Mv-Mh)/N,G.B);
+  base.Wall=Wall;base.Mv=Mv;base.Mh=Mh;
+  if(!base.ok) warn.push('A resultante cai fora da base: o muro tomba.');
+  else if(!base.kern) warn.push(`Excentricidade e = ${n2(base.e)} m fora do terço central (B/6 = ${n2(G.B/6)} m): parte da base perde contato.`);
+
+  // ---- capacidade de carga ----
+  let cap=null;
+  if(base.ok){
+    const Bp=G.B-2*Math.abs(base.e);
+    if(Bp>1e-6){
+      const front=!!w.useQo, Df=front?D:0;      // embutimento: sobrecarga gama*D e fator de profundidade
+      const qo=front&&E.rowsP.length?E.rowsP[E.rowsP.length-1].sv:0;
+      cap=bearingMeyerhof({phi:phiB,c:cB,gam:gB,Bp,Df,qo,N,Hh:Math.max(0,Eh-Epu)});
+    }
+  }
+
+  // ---- fuste: esforcos por seccao (so empuxo horizontal) ----
+  const nS=60,S=[];
+  for(let k=0;k<=nS;k++){
+    const z=G.hst*k/nS, I=integrate(E.ptsA,0,z);
+    S.push({z,V:I.E,M:z*I.E-I.Mt});
+  }
+  const stem={S,Vk:S[nS].V,Mk:S[nS].M,hst:G.hst};
+
+  // ---- sapata (flexao): ponta e talao ----
+  let foot=null;
+  if(!G.grav&&G.hs>1e-9&&base.ok){
+    const It=integrate(base.pts,0,G.lt), Ih=integrate(base.pts,G.xb,G.B);
+    const wsF=G.gm*G.hs, wdown=svCol+inp.q+wsF;
+    foot={
+      wsF,wdown,
+      toe:{L:G.lt,Eup:It.E,V:It.E-wsF*G.lt,M:G.lt*It.E-It.Mt-wsF*G.lt*G.lt/2},
+      heel:{L:G.lh,Eup:Ih.E,wdown,V:wdown*G.lh-Ih.E,M:wdown*G.lh*G.lh/2-(Ih.Mt-G.xb*Ih.E)}
+    };
+  }
+
+  // ---- muro de gravidade: tensoes em secoes intermediarias ----
+  let sections=null;
+  if(G.grav){
+    sections=[0.25,0.5,0.75,1].map(fr=>{
+      const z=G.Hw*fr, bz=G.bt+(G.bb-G.bt)*fr, xf=G.bb-bz;
+      const wz=(G.bb-G.bt)*fr;
+      const Wr=G.gm*G.bt*z, xr=G.bb-G.bt/2, Wt=G.gm*wz*z/2, xt=(G.bb-G.bt)-wz/3;
+      const Ez=integrate(E.ptsA,0,z), Evz=Ez.E*tanA, arm=Ez.E>1e-9?z-Ez.zbar:0;
+      const Nz=Wr+Wt+Evz;
+      const xR=(Wr*(xr-xf)+Wt*(xt-xf)+Evz*bz-Ez.E*arm)/Nz, e=bz/2-xR;
+      const s=baseStress(Nz,xR,bz);
+      return {fr,z,b:bz,N:Nz,Ez:Ez.E,xR,e,ok:s.ok,kern:s.kern,sigMax:s.sigMax,sigMin:s.sigMin,Lc:s.Lc};
+    });
+  }
+
+  Object.assign(out,{ok:true,E,Eh,ya,Ep0,Epu,yp,Ev,tanA,F,Wst,tomb,desl,base,cap,stem,foot,sections,
+    FSt:tomb.FS,FSd:desl.FS,FSc:cap?cap.FS:0,
+    okT:tomb.FS>=w.FSt-1e-9,okD:desl.FS>=w.FSd-1e-9,okC:!!cap&&cap.FS>=w.FSc-1e-9,okK:base.ok&&base.kern});
+  return out;
+}
 </script>
 <script>
 const PAL=['#fdf0c9','#d9f2d4','#d3d9f4','#f6dfe0','#e3ddf0','#ffe3c7','#d1eef2'];
@@ -339,7 +688,8 @@ function getInputs(){
   return {method:st.method,H:Math.max(0.5,num('H',5)),D:Math.max(0.5,num('D',4)),
     q:Math.max(0,num('q',0)),qP:Math.max(0,num('qP',0)),
     deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
-    cutTension:$('cutTension').checked,pp1zero:$('pp1zero').checked,
+    cutTension:$('cutTension').checked,paLinear:$('paLinear').checked,pp1zero:$('pp1zero').checked,
+    fichaF:Math.max(1,num('fichaF',1.2)),fsP:Math.max(1,num('fsP',1)),
     layersA:st.layersA,layersP:st.layersP};
 }
 
@@ -380,8 +730,8 @@ function memoria(res,inp){
   return L.join('\n');
 }
 
-function renderResults(){
-  const inp=getInputs(), res=calcEmpuxos(inp);
+function renderResults(inp,fic){
+  const res=calcEmpuxos(inp);
   window.lastRes=res;
   let h='';
   if(res.warn.length) h+=`<div class="warn" style="margin-bottom:8px">${[...new Set(res.warn)].join('<br>')}</div>`;
@@ -391,7 +741,7 @@ function renderResults(){
   h+='<h3>Empuxo ativo por profundidade</h3>'+pressureTable(res.rowsA,'A');
   h+='<h3>Empuxo passivo por profundidade (a partir do nível da escavação)</h3>'+pressureTable(res.rowsP,'P');
   h+=`<details><summary>Memória de cálculo passo a passo</summary><pre class="mem">${memoria(res,inp).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></details>`;
-  $('resBody').innerHTML=h;
+  $('pane-emp').innerHTML=h;
 
   // valores-chave (coluna da direita)
   const kv=(n,v,u='kPa')=>`<div class="kv"><span>${n}</span><b>${v} ${u}</b></div>`;
@@ -408,58 +758,258 @@ function renderResults(){
   k+=kv(`Ep (0 → D)`,`${fv(res.Ep.E)}`,'kN/m');
   k+=`<div class="note">atua a ${fv(res.Ep.zbar)} m abaixo da escavação</div>`;
   if(res.z0!==undefined) k+=`<div class="note">Profundidade de tração z0 = ${f2(res.z0)} m</div>`;
+  if(res.linearTop) k+=`<div class="note">Pa1 = 0: ativo em triângulo de 0 no topo até Pa2 (como na folha)</div>`;
   $('keyVals').innerHTML=k;
+
+  // Etapas 3 e 4
+  $('pane-diag').innerHTML=renderDiagPane(inp,fic);
+  $('pane-ficha').innerHTML=renderFichaPane(inp,fic);
+  renderDimCard(inp,fic);
 }
 
-function update(){ draw(); renderResults(); }
+/* ---------- Graficos (Etapa 3) ---------- */
+function niceTicks(lo,hi,n=4){
+  if(hi-lo<1e-9){hi=lo+1;}
+  const raw=(hi-lo)/n,mag=Math.pow(10,Math.floor(Math.log10(raw))),r=raw/mag;
+  const step=(r<1.5?1:r<3?2:r<7?5:10)*mag;
+  const t0=Math.floor(lo/step+1e-9)*step,t1=Math.ceil(hi/step-1e-9)*step,ticks=[];
+  for(let v=t0;v<=t1+step*1e-6;v+=step) ticks.push(+v.toFixed(10));
+  return {ticks,lo:t0,hi:t1};
+}
+const fnum=v=>String(+v.toFixed(2)).replace('.',',');
+const C_ACT='#d9622b', C_PAS='#1f6feb', C_LIN='#154ea8';
+
+/* o = {title,unit,zMax,H,zO,zC,series:[{pts:[{x,z}],fill,stroke}],marks:[{x,z,label,dx}]} */
+function chartSVG(o){
+  const W=400,Ht=420,ml=46,mr=16,mt=40,mb=34,pw=W-ml-mr,ph=Ht-mt-mb;
+  let xmin=0,xmax=0;
+  o.series.forEach(s=>s.pts.forEach(p=>{xmin=Math.min(xmin,p.x);xmax=Math.max(xmax,p.x);}));
+  const padx=(xmax-xmin)*0.08||1; xmin-=xmin<0?padx:0; xmax+=xmax>0?padx:0;
+  const nt=niceTicks(xmin,xmax,4), X=v=>ml+(v-nt.lo)/(nt.hi-nt.lo)*pw, Y=z=>mt+z/o.zMax*ph;
+  let s=`<svg viewBox="0 0 ${W} ${Ht}" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,system-ui,Arial,sans-serif">`;
+  s+=`<text x="${ml}" y="18" font-size="13" font-weight="700" fill="#154ea8">${o.title}</text>`;
+  s+=`<text x="${ml}" y="33" font-size="11" fill="#6b7c93">${o.unit}</text>`;
+  nt.ticks.forEach(v=>{
+    s+=`<line x1="${X(v)}" y1="${mt}" x2="${X(v)}" y2="${mt+ph}" stroke="#e3ebf6"/>`;
+    s+=`<text x="${X(v)}" y="${mt+ph+14}" font-size="10" fill="#6b7c93" text-anchor="middle">${fnum(v)}</text>`;
+  });
+  const zt=niceTicks(0,o.zMax,6);
+  zt.ticks.filter(v=>v>=0&&v<=o.zMax+1e-9).forEach(v=>{
+    s+=`<line x1="${ml}" y1="${Y(v)}" x2="${ml+pw}" y2="${Y(v)}" stroke="#eef3fa"/>`;
+    s+=`<text x="${ml-5}" y="${Y(v)+3}" font-size="10" fill="#6b7c93" text-anchor="end">${fnum(v)}</text>`;
+  });
+  s+=`<text x="12" y="${mt+ph/2}" font-size="10" fill="#6b7c93" transform="rotate(-90 12 ${mt+ph/2})" text-anchor="middle">z (m)</text>`;
+  o.series.forEach(se=>{
+    if(se.pts.length<2) return;
+    const pts=se.pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.z).toFixed(1)}`);
+    const first=se.pts[0],last=se.pts[se.pts.length-1];
+    s+=`<polygon points="${pts.join(' ')} ${X(0).toFixed(1)},${Y(last.z).toFixed(1)} ${X(0).toFixed(1)},${Y(first.z).toFixed(1)}" fill="${se.fill}" fill-opacity=".55" stroke="none"/>`;
+    s+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${se.stroke}" stroke-width="1.8" stroke-linejoin="round"/>`;
+  });
+  s+=`<line x1="${X(0)}" y1="${mt}" x2="${X(0)}" y2="${mt+ph}" stroke="#1b2a41" stroke-width="1.6"/>`;
+  const hl=(z,label,col)=>{ if(z<0||z>o.zMax+1e-9) return '';
+    return `<line x1="${ml}" y1="${Y(z)}" x2="${ml+pw}" y2="${Y(z)}" stroke="${col}" stroke-dasharray="5 4"/>
+    <text x="${ml+pw-2}" y="${Y(z)-3}" font-size="10" fill="${col}" text-anchor="end" font-weight="600">${label}</text>`; };
+  s+=hl(o.H,'escavação (z = h)','#6b7c93');
+  if(o.zO!==undefined) s+=hl(o.zO,'O','#d9622b');
+  s+=hl(o.zC,'C','#154ea8');
+  (o.marks||[]).forEach(m=>{
+    s+=`<circle cx="${X(m.x)}" cy="${Y(m.z)}" r="4" fill="#fff" stroke="#d64545" stroke-width="2"/>`;
+    const right=X(m.x)<ml+pw*0.6;
+    s+=`<text x="${X(m.x)+(right?8:-8)}" y="${Y(m.z)+4}" font-size="11" font-weight="700" fill="#d64545" text-anchor="${right?'start':'end'}">${m.label}</text>`;
+  });
+  return s+'</svg>';
+}
+
+function renderDiagPane(inp,fic){
+  if(!fic.ok) return `<div class="warn">${fic.warn.join('<br>')||'Sem resultado.'}</div>`;
+  const H=inp.H,Z=fic.Z,zC=fic.zC,zO=H+fic.xp;
+  const pf=perfis(fic.ptsA,fic.ptsP,H,zC,[zO]);
+  window.lastPerfis=pf;
+  const A=clipPts(fic.ptsA,zC).map(p=>({x:p.v,z:p.z}));
+  const P=clipPts(fic.ptsP,Z).map(p=>({x:-p.v,z:p.z+H}));
+  const N=pf.netPts.map(p=>({x:p.v,z:p.z}));
+  const Vs=pf.S.map(p=>({x:p.V,z:p.z})), Ms=pf.S.map(p=>({x:p.M,z:p.z}));
+  const base={zMax:zC,H,zO,zC};
+  const c1=chartSVG({...base,title:'Empuxos',unit:'kPa  ·  ativo → direita, passivo ← esquerda',
+    series:[{pts:A,fill:'#f6c6a8',stroke:C_ACT},{pts:P,fill:'#b9d3fb',stroke:C_PAS}]});
+  const c2=chartSVG({...base,title:'Empuxo líquido',unit:'kPa  ·  + ativo (empurra p/ a escavação)  − passivo',
+    series:[{pts:N,fill:'#cfe0fb',stroke:C_LIN}]});
+  const c3=chartSVG({...base,title:'Esforço cortante V',unit:'kN/m',
+    series:[{pts:Vs,fill:'#cfe0fb',stroke:C_LIN}],
+    marks:[{x:pf.Vmax,z:pf.zVmax,label:`Vmax = ${fv(pf.Vmax)}`}]});
+  const c4=chartSVG({...base,title:'Momento fletor M',unit:'kN·m/m',
+    series:[{pts:Ms,fill:'#cfe0fb',stroke:C_LIN}],
+    marks:[{x:pf.Mmax,z:pf.zMmax,label:`Mmax = ${fv(pf.Mmax)}`}]});
+  return `<div class="charts">${[c1,c2,c3,c4].map(c=>`<div class="chart">${c}</div>`).join('')}</div>
+  <div class="note" style="margin-top:10px">Diagramas até a ponta teórica C (z = h + Z = ${fv(zC)} m). Valores por metro de cortina.
+  Mmax = <b>${fv(pf.Mmax)} kN·m/m</b> em z = ${fv(pf.zMmax)} m (V = 0) · Vmax até essa seção = <b>${fv(Math.abs(pf.Vmax))} kN/m</b> em z = ${fv(pf.zVmax)} m ·
+  V residual em C = ${fv(pf.V)} kN/m (coberto pelo acréscimo da ficha) · M(C) = ${fv(pf.M)}.${fic.FSp!==1?` Passivo reduzido por FS = ${fv(fic.FSp)}.`:''}</div>`;
+}
+
+function renderFichaPane(inp,fic){
+  let h='';
+  if(fic.warn.length) h+=`<div class="warn" style="margin-bottom:8px">${[...new Set(fic.warn)].join('<br>')}</div>`;
+  if(!fic.ok) return h||'<div class="note">Sem resultado.</div>';
+  const pf=window.lastPerfis||perfis(fic.ptsA,fic.ptsP,inp.H,fic.zC,[inp.H+fic.xp]);
+  const stat=(l,v,u,main)=>`<div class="stat${main?' main':''}"><small>${l}</small><b>${v}</b><small class="u">${u}</small></div>`;
+  h+=`<div class="stats">
+    ${stat('Ficha teórica Z = x + x′',fv(fic.Z),'m')}
+    ${stat(`Ficha de projeto (${fv(fic.factor)}·Z)`,fv(fic.Zproj),'m',true)}
+    ${stat('Comprimento total h + ficha',fv(fic.L),'m')}
+    ${stat('Ponto de giro x′',fv(fic.xp),'m abaixo da escavação')}
+    ${stat('x (O → C)',fv(fic.x),'m')}
+    ${stat('Mmax',fv(Math.abs(pf.Mmax)),`kN·m/m em z = ${fv(pf.zMmax)} m`)}
+  </div>`;
+  const diff=inp.D-fic.Zproj;
+  h+=Math.abs(diff)<0.026
+    ?`<div class="note" style="margin:10px 0">A ficha D informada (${fv(inp.D)} m) já é a ficha de projeto.</div>`
+    :`<div class="note" style="margin:10px 0">Ficha D informada: ${fv(inp.D)} m ${diff<0?'(<b>menor</b> que a de projeto)':'(maior que a de projeto)'}. <button data-used="1" style="margin-left:6px">Usar ficha de projeto em D</button></div>`;
+  const fs=fic.FSp!==1?` (passivo já dividido por FS = ${fv(fic.FSp)})`:'';
+  h+=`<h3>Pressões no diagrama (notação da folha)${fs}</h3><div class="tw"><table><thead><tr><th>Símbolo</th><th class="l">Onde</th><th>Valor (kPa)</th></tr></thead><tbody>
+    <tr><td>Pa1</td><td class="l">topo (z = 0)</td><td class="hi">${fv(fic.Pa1)}</td></tr>
+    <tr><td>Pa2A</td><td class="l">z = h, camada de cima</td><td class="hi">${fv(fic.Pa2A)}</td></tr>
+    <tr><td>Pa2B</td><td class="l">z = h, camada de baixo</td><td class="hi">${fv(fic.Pa2B)}</td></tr>
+    <tr><td>Pa3</td><td class="l">ponta C (z = h + Z)</td><td class="hi">${fv(fic.Pa3)}</td></tr>
+    <tr><td>Pp1</td><td class="l">nível da escavação</td><td class="hi">${fv(fic.Pp1)}</td></tr>
+    <tr><td>Pp2</td><td class="l">ponta C (zp = Z)</td><td class="hi">${fv(fic.Pp2)}</td></tr>
+    <tr><td>Ppe = Pp2 − Pa3</td><td class="l">passivo líquido em C</td><td class="hi">${fv(fic.Ppe)}</td></tr>
+  </tbody></table></div>`;
+  h+=`<h3>Resultantes e braços em relação a C — Σ Mc = 0</h3><div class="tw"><table><thead><tr><th>Resultante</th><th>E (kN/m)</th><th>y (m)</th><th>E·y (kN·m/m)</th></tr></thead><tbody>
+    <tr><td>E1 (ativo, 0 → h)</td><td>${fv(fic.E1)}</td><td>${fv(fic.y1)}</td><td>${fv(fic.M1)}</td></tr>
+    <tr><td>E2 (líquido ativo, h → O)</td><td>${fv(fic.E2)}</td><td>${fv(fic.y2)}</td><td>${fv(fic.M2)}</td></tr>
+    <tr><td>E3 (líquido passivo, O → C)</td><td>${fv(fic.E3)}</td><td>${fv(fic.y3)}</td><td>− ${fv(fic.M3)}</td></tr>
+    <tr><td><b>E1·y1 + E2·y2 − E3·y3</b></td><td></td><td></td><td class="hi">${fv(fic.resid)}</td></tr>
+  </tbody></table></div>`;
+  const L=[];
+  L.push(`1) Ponto de giro:  Ppe = 0  →  x′ = ${fv(fic.xp)} m   (O em z = h + x′ = ${fv(inp.H+fic.xp)} m)`);
+  L.push(`2) Equilíbrio de momentos em C:  E1·y1 + E2·y2 − E3·y3 = 0  →  x = ${fv(fic.x)} m`);
+  L.push(`      ${fv(fic.E1)}×${fv(fic.y1)} + ${fv(fic.E2)}×${fv(fic.y2)} − ${fv(fic.E3)}×${fv(fic.y3)} = ${fv(fic.resid)}`);
+  L.push(`3) Z = x + x′ = ${fv(fic.x)} + ${fv(fic.xp)} = ${fv(fic.Z)} m`);
+  L.push(`4) Ficha de projeto = ${fv(fic.factor)} × Z = ${fv(fic.Zproj)} m   →   comprimento total = ${fv(inp.H)} + ${fv(fic.Zproj)} = ${fv(fic.L)} m`);
+  h+=`<details open><summary>Passo a passo</summary><pre class="mem">${L.join('\n')}</pre></details>`;
+  return h;
+}
+
+function renderDimCard(inp,fic){
+  if(!fic.ok){$('dimBody').innerHTML='<div class="note">Sem resultado de ficha.</div>';return;}
+  const pf=window.lastPerfis;
+  const kv=(n,v,u)=>`<div class="kv"><span>${n}</span><b>${v} ${u}</b></div>`;
+  $('dimBody').innerHTML=kv('Ficha teórica Z',fv(fic.Z),'m')+kv(`Ficha de projeto (${fv(fic.factor)}Z)`,fv(fic.Zproj),'m')+
+    kv('Comprimento total',fv(fic.L),'m')+kv('Ponto de giro x′',fv(fic.xp),'m')+
+    (pf?kv('Mmax',fv(Math.abs(pf.Mmax)),'kN·m/m')+kv('Vmax',fv(Math.abs(pf.Vmax)),'kN/m'):'');
+}
+
+function showTab(name){
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);
+  window.curTab=name;
+}
+
+function update(){
+  const inp=getInputs();
+  const fic=solveFicha(inp,inp.fsP,inp.fichaF);
+  window.lastFic=fic;
+  draw();
+  renderResults(inp,fic);
+  showTab(window.curTab||'emp');
+}
 
 function draw(){
   const H=Math.max(0.5,num('H',5)), D=Math.max(0.5,num('D',4)), q=Math.max(0,num('q',0));
-  const total=H+D;
-  const y0=95, yMax=500, s=Math.min(60,(yMax-y0)/total);
-  const yE=y0+H*s, yB=y0+total*s;
-  const xw=400, ww=14, xl=95, xr=715;
+  const total=H+D;                                   // comprimento informado
+  const fic=window.lastFic, ficOk=!!(fic&&fic.ok);
+  const Dd=Math.max(D,ficOk?fic.Zproj:0);            // o desenho cobre a ficha de projeto
+  const T=H+Dd;
+  const y0=95, yMax=500, s=Math.min(60,(yMax-y0)/T);
+  const yE=y0+H*s, yB=y0+T*s;
+  const xw=420, ww=14, xl=180, xr=735, wl=xw-ww/2, wr=xw+ww/2, dx=40;
+  const CA=C_ACT, CP=C_PAS;
   let o='';
   o+=`<defs>
     <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#154ea8"/></marker>
+    <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="${CA}"/></marker>
+    <marker id="arP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="${CP}"/></marker>
     <marker id="ard" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#1b2a41"/></marker>
     <pattern id="hat" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#4b6ea8"/><line x1="0" y1="0" x2="0" y2="6" stroke="#fff" stroke-width="1.5"/></pattern>
   </defs>`;
-  // active layers (right)
-  boundaries(st.layersA,total).forEach(b=>{
-    const ya=y0+b.z1*s, yb=y0+b.z2*s;
-    o+=`<rect x="${xw+ww/2}" y="${ya}" width="${xr-xw-ww/2}" height="${yb-ya}" fill="${PAL[b.i%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
+  // camadas ativas (direita)
+  boundaries(st.layersA,T).forEach(b=>{
+    const ya=y0+b.z1*s, yb=y0+b.z2*s, tx=wr+40;
+    o+=`<rect x="${wr}" y="${ya}" width="${xr-wr}" height="${yb-ya}" fill="${PAL[b.i%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
     if(yb-ya>34){
-      o+=`<text x="${xw+ww/2+14}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">A${b.i+1}</text>
-      <text x="${xw+ww/2+14}" y="${ya+31}" font-size="11" fill="#40526b">φ=${b.l.phi}°  c=${b.l.c} kPa  γ=${b.l.g} kN/m³</text>`;
+      o+=`<text x="${tx}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">A${b.i+1} <tspan font-weight="400" fill="#6b7c93" font-size="11">(z = ${f2(b.z1)} → ${f2(b.z2)} m)</tspan></text>
+      <text x="${tx}" y="${ya+31}" font-size="11" fill="#40526b">φ=${b.l.phi}°  c=${b.l.c} kPa  γ=${b.l.g} kN/m³</text>`;
     } else if(yb-ya>16){
-      o+=`<text x="${xw+ww/2+14}" y="${ya+(yb-ya)/2+4}" font-size="11" fill="#40526b">A${b.i+1}: φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
-    }
-    if(b.z1>0){
-      o+=`<text x="${xr+4}" y="${ya+4}" font-size="10" fill="#6b7c93">${f2(b.z1)}</text>`;
+      o+=`<text x="${tx}" y="${ya+(yb-ya)/2+4}" font-size="11" fill="#40526b">A${b.i+1}: φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
     }
   });
-  // passive layers (left)
-  boundaries(st.layersP,D).forEach(b=>{
+  // camadas passivas (esquerda)
+  boundaries(st.layersP,Dd).forEach(b=>{
     const ya=yE+b.z1*s, yb=yE+b.z2*s;
-    o+=`<rect x="${xl}" y="${ya}" width="${xw-ww/2-xl}" height="${yb-ya}" fill="${PAL[(b.i+3)%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
+    o+=`<rect x="${xl}" y="${ya}" width="${wl-xl}" height="${yb-ya}" fill="${PAL[(b.i+3)%PAL.length]}" stroke="#9fb3d1" stroke-width=".6"/>`;
     if(yb-ya>34){
-      o+=`<text x="${xl+10}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">P${b.i+1}</text>
+      o+=`<text x="${xl+10}" y="${ya+16}" font-size="12" fill="#1b2a41" font-weight="600">P${b.i+1} <tspan font-weight="400" fill="#6b7c93" font-size="11">(zp = ${f2(b.z1)} → ${f2(b.z2)} m)</tspan></text>
       <text x="${xl+10}" y="${ya+31}" font-size="11" fill="#40526b">φ=${b.l.phi}°  c=${b.l.c} kPa  γ=${b.l.g}</text>`;
     } else if(yb-ya>16){
       o+=`<text x="${xl+10}" y="${ya+(yb-ya)/2+4}" font-size="11" fill="#40526b">P${b.i+1}: φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
     }
   });
-  // ground lines
-  o+=`<line x1="${xw+ww/2}" y1="${y0}" x2="${xr}" y2="${y0}" stroke="#1b2a41" stroke-width="2.5"/>`;
-  o+=`<line x1="${xl}" y1="${yE}" x2="${xw-ww/2}" y2="${yE}" stroke="#1b2a41" stroke-width="2.5"/>`;
-  // dashed top level on excavation side
-  o+=`<line x1="${xl-10}" y1="${y0}" x2="${xw-ww/2}" y2="${y0}" stroke="#8aa0c0" stroke-dasharray="6 5"/>`;
-  // wall
-  o+=`<rect x="${xw-ww/2}" y="${y0}" width="${ww}" height="${yB-y0}" fill="url(#hat)" stroke="#154ea8" stroke-width="1.5"/>`;
+  // terreno
+  o+=`<line x1="${wr}" y1="${y0}" x2="${xr}" y2="${y0}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  o+=`<line x1="${xl}" y1="${yE}" x2="${wl}" y2="${yE}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  o+=`<line x1="${xl-10}" y1="${y0}" x2="${wl}" y2="${y0}" stroke="#8aa0c0" stroke-dasharray="6 5"/>`;
+  // parede
+  o+=`<rect x="${wl}" y="${y0}" width="${ww}" height="${yB-y0}" fill="url(#hat)" stroke="#154ea8" stroke-width="1.5"/>`;
+
+  // ---- linhas de referencia + pontos de atuacao das pressoes ----
+  const right=[],left=[];     // rotulos: {y (desejado), ya (seta), t, c, bold}
+  if(ficOk){
+    const lines=[{z:H+fic.xp,t:`O  (x′ = ${f2(fic.xp)} m)`,c:'#d9622b'},
+                 {z:H+fic.Z,t:`C  (Z = ${f2(fic.Z)} m)`,c:'#154ea8'},
+                 {z:H+fic.Zproj,t:`ficha proj. ${f2(fic.Zproj)} m`,c:'#0a7a5a'}];
+    lines.forEach(m=>{
+      const yy=y0+m.z*s;
+      o+=`<line x1="${xl}" y1="${yy}" x2="${xr}" y2="${yy}" stroke="${m.c}" stroke-width="1.2" stroke-dasharray="7 4" opacity=".85"/>`;
+      right.push({y:yy,t:m.t,c:m.c,bold:false,ln:true});
+    });
+    const yC=y0+(H+fic.Z)*s;
+    // ativo (seta para a esquerda, a direita da parede)
+    right.push({y:y0,ya:y0,t:`Pa1 = ${fv(fic.Pa1)} kPa`,c:CA,bold:true,side:'A',zp:y0});
+    right.push({y:yE,ya:yE-7,t:`Pa2A = ${fv(fic.Pa2A)} kPa`,c:CA,bold:true,side:'A',zp:yE});
+    right.push({y:yE,ya:yE+7,t:`Pa2B = ${fv(fic.Pa2B)} kPa`,c:CA,bold:true,side:'A',zp:yE});
+    right.push({y:yC,ya:yC,t:`Pa3 = ${fv(fic.Pa3)} kPa`,c:CA,bold:true,side:'A',zp:yC});
+    // passivo (seta para a direita, a esquerda da parede)
+    left.push({y:yE,ya:yE,t:`Pp1 = ${fv(fic.Pp1)} kPa`,c:CP,bold:true,side:'P',zp:yE});
+    left.push({y:yC,ya:yC-7,t:`Pp2 = ${fv(fic.Pp2)} kPa`,c:CP,bold:true,side:'P',zp:yC});
+    left.push({y:yC,ya:yC+7,t:`Ppe = ${fv(fic.Ppe)} kPa`,c:'#154ea8',bold:true,side:'P',zp:yC});
+  }
+  // evita sobreposicao de rotulos numa mesma coluna (espaco minimo 14 px)
+  const spread=arr=>{
+    const a=arr.map((l,i)=>({...l,i})).sort((u,v)=>u.y-v.y||u.i-v.i);
+    let prev=-1e9;
+    a.forEach(l=>{ l.ly=Math.max(l.y,prev+14); prev=l.ly; });
+    return a;
+  };
+  spread(right).forEach(l=>{
+    if(l.ln){ o+=`<text x="${xr+12}" y="${l.ly+4}" font-size="11" fill="${l.c}" font-weight="600">${l.t}</text>`; return; }
+    o+=`<line x1="${wr+34}" y1="${l.ya}" x2="${xr}" y2="${l.ya}" stroke="${l.c}" stroke-width=".8" stroke-dasharray="2 3" opacity=".8"/>
+        <line x1="${wr+34}" y1="${l.ya}" x2="${wr+2}" y2="${l.ya}" stroke="${l.c}" stroke-width="2" marker-end="url(#arA)"/>
+        <circle cx="${xw}" cy="${l.zp}" r="3.5" fill="#fff" stroke="${l.c}" stroke-width="2"/>
+        <line x1="${xr}" y1="${l.ya}" x2="${xr+9}" y2="${l.ly+1}" stroke="${l.c}" stroke-width=".8" opacity=".8"/>
+        <text x="${xr+12}" y="${l.ly+4}" font-size="12" fill="${l.c}" font-weight="700">${l.t}</text>`;
+  });
+  spread(left).forEach(l=>{
+    o+=`<line x1="${wl-34}" y1="${l.ya}" x2="${xl}" y2="${l.ya}" stroke="${l.c}" stroke-width=".8" stroke-dasharray="2 3" opacity=".8"/>
+        <line x1="${wl-34}" y1="${l.ya}" x2="${wl-2}" y2="${l.ya}" stroke="${l.c}" stroke-width="2" marker-end="url(#arP)"/>
+        <circle cx="${xw}" cy="${l.zp}" r="3.5" fill="#fff" stroke="${l.c}" stroke-width="2"/>
+        <line x1="${xl}" y1="${l.ya}" x2="${xl-9}" y2="${l.ly+1}" stroke="${l.c}" stroke-width=".8" opacity=".8"/>
+        <text x="${xl-12}" y="${l.ly+4}" font-size="12" fill="${l.c}" font-weight="700" text-anchor="end">${l.t}</text>`;
+  });
   o+=`<text x="${xw}" y="${yB+16}" font-size="12" text-anchor="middle" fill="#154ea8" font-weight="700">C</text>`;
-  // surcharge
-  const sx1=xw+ww/2+10, sx2=xr-20, ysc=y0-42;
+
+  // sobrecarga
+  const sx1=wr+10, sx2=xr-20, ysc=y0-42;
   if(q>0){
     o+=`<line x1="${sx1}" y1="${ysc}" x2="${sx2}" y2="${ysc}" stroke="#154ea8" stroke-width="2"/>`;
     const n=Math.max(4,Math.floor((sx2-sx1)/45));
@@ -469,27 +1019,25 @@ function draw(){
   } else {
     o+=`<text x="${(sx1+sx2)/2}" y="${y0-14}" font-size="12" text-anchor="middle" fill="#6b7c93">sem sobrecarga</text>`;
   }
-  // dimensions
-  const dx=50;
+  // cotas
   const dim=(y1,y2,label,color)=>`<line x1="${dx}" y1="${y1}" x2="${dx}" y2="${y2}" stroke="${color}" stroke-width="1.5" marker-start="url(#ard)" marker-end="url(#ard)"/>
     <line x1="${dx-8}" y1="${y1}" x2="${dx+8}" y2="${y1}" stroke="${color}"/><line x1="${dx-8}" y1="${y2}" x2="${dx+8}" y2="${y2}" stroke="${color}"/>
     <text x="${dx-12}" y="${(y1+y2)/2}" font-size="13" fill="${color}" font-weight="700" text-anchor="middle" transform="rotate(-90 ${dx-12} ${(y1+y2)/2})">${label}</text>`;
   o+=dim(y0,yE,`h = ${f2(H)} m`,'#1b2a41');
-  o+=dim(yE,yB,`D = ${f2(D)} m (ficha)`,'#154ea8');
-  // labels
-  o+=`<text x="${xl+8}" y="${yE-8}" font-size="12" fill="#6b7c93">Escavação · lado passivo</text>`;
-  o+=`<text x="${xr-8}" y="${y0+18}" font-size="12" fill="#6b7c93" text-anchor="end">Solo contido · lado ativo</text>`;
-  o+=`<text x="${xr+4}" y="${y0-4}" font-size="10" fill="#6b7c93">z (m)</text>`;
-  o+=`<text x="${xr+4}" y="${yE+4}" font-size="10" fill="#6b7c93">${f2(H)}</text>`;
-  // title
+  o+=dim(yE,yE+D*s,`D = ${f2(D)} m (informada)`,'#154ea8');
+  // legendas
+  o+=`<text x="${xl}" y="${yB+16}" font-size="12" fill="#6b7c93">Escavação · lado passivo</text>`;
+  o+=`<text x="${xr}" y="${yB+16}" font-size="12" fill="#6b7c93" text-anchor="end">Solo contido · lado ativo</text>`;
+  // titulo
   const mname=st.method==='rankine'?'Rankine':'Coulomb';
   o+=`<text x="20" y="28" font-size="15" font-weight="700" fill="#154ea8">Esquema da cortina em balanço (sem tirantes)</text>`;
-  o+=`<text x="20" y="46" font-size="12" fill="#6b7c93">Método: ${mname} · Pa = γ·h·Ka − 2c√Ka · Pp = γ·h·Kp + 2c√Kp</text>`;
+  o+=`<text x="20" y="46" font-size="12" fill="#6b7c93">Método: ${mname} · Pa = γ·h·Ka − 2c√Ka · Pp = γ·h·Kp + 2c√Kp${ficOk&&fic.FSp!==1?` · Pp reduzido por FS = ${f2(fic.FSp)}`:''}</text>`;
+  if(ficOk) o+=`<text x="${xr+12}" y="${y0-14}" font-size="10" fill="#6b7c93">pressões atuantes (kPa):</text>`;
   $('svg').innerHTML=o;
 
   // summary
   $('sMethod').textContent=mname;
-  $('sH').textContent=f2(H)+' m'; $('sD').textContent=f2(D)+' m';
+  $('sH').textContent=f2(H)+' m'; $('sD').textContent=f2(D)+' m (informada)';
   $('sL').textContent=f2(total)+' m'; $('sQ').textContent=f2(q)+' kPa';
   $('sNA').textContent=st.layersA.length; $('sNP').textContent=st.layersP.length;
   // warnings
@@ -502,7 +1050,7 @@ function draw(){
   $('warn').innerHTML=[...new Set(w)].join('<br>');
 }
 
-function refresh(){ renderTables(); draw(); }
+function refresh(){ renderTables(); update(); }
 
 document.addEventListener('input',e=>{
   const t=e.target;
@@ -511,7 +1059,7 @@ document.addEventListener('input',e=>{
     const v=parseFloat(t.value);
     L[+t.dataset.i][t.dataset.k]=isFinite(v)?v:0;
   }
-  draw();
+  update();
 });
 document.addEventListener('click',e=>{
   const t=e.target;
@@ -519,6 +1067,12 @@ document.addEventListener('click',e=>{
     const L=t.dataset.add==='A'?st.layersA:st.layersP;
     L.splice(L.length-1,0,{t:1,phi:30,c:0,g:18}); // keep last as bottom
     refresh();
+  }
+  if(t.dataset.tab){ showTab(t.dataset.tab); return; }
+  if(t.dataset.used){
+    const f=window.lastFic;
+    if(f&&f.ok){ $('D').value=(Math.ceil(f.Zproj*20-1e-9)/20).toFixed(2); update(); }
+    return;
   }
   if(t.dataset.del){
     const L=t.dataset.del==='A'?st.layersA:st.layersP;
@@ -528,13 +1082,15 @@ document.addEventListener('click',e=>{
     st.method=t.dataset.m;
     [...t.parentElement.children].forEach(b=>b.classList.toggle('on',b===t));
     $('coulombBox').style.display=st.method==='coulomb'?'block':'none';
-    draw();
+    update();
   }
 });
 
 // save / load
 function getState(){
-  return {versao:1,method:st.method,H:num('H',5),D:num('D',4),q:num('q',0),
+  return {versao:3,method:st.method,H:num('H',5),D:num('D',4),q:num('q',0),qP:num('qP',0),
+    cutTension:$('cutTension').checked,paLinear:$('paLinear').checked,pp1zero:$('pp1zero').checked,
+    fichaF:num('fichaF',1.2),fsP:num('fsP',1),
     deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
     layersA:st.layersA,layersP:st.layersP};
 }
@@ -550,7 +1106,10 @@ $('fileIn').onchange=ev=>{
     try{
       const d=JSON.parse(r.result);
       st.method=d.method||'rankine'; st.layersA=d.layersA; st.layersP=d.layersP;
-      ['H','D','q','deltaA','deltaP','beta'].forEach(k=>{ if(d[k]!==undefined) $(k).value=d[k]; });
+      ['H','D','q','qP','deltaA','deltaP','beta','fichaF','fsP'].forEach(k=>{ if(d[k]!==undefined) $(k).value=d[k]; });
+      if(d.cutTension!==undefined) $('cutTension').checked=d.cutTension;
+      if(d.pp1zero!==undefined) $('pp1zero').checked=d.pp1zero;
+      if(d.paLinear!==undefined) $('paLinear').checked=d.paLinear;
       document.querySelectorAll('#method button').forEach(b=>b.classList.toggle('on',b.dataset.m===st.method));
       $('coulombBox').style.display=st.method==='coulomb'?'block':'none';
       refresh();
@@ -558,7 +1117,7 @@ $('fileIn').onchange=ev=>{
   };
   r.readAsText(f);
 };
-$('btnCalc').onclick=()=>alert('O cálculo de empuxos entra na Etapa 2 do roadmap.');
+$('btnCalc').onclick=()=>$('results').scrollIntoView({behavior:'smooth'});
 
 refresh();
 </script>
