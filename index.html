@@ -477,182 +477,209 @@ function perfis(ptsA,ptsP,H,zEnd,extra=[],nsub=60){
 }
 
 /* =====================================================================
-   ETAPA 5 - MURO DE CONTENCAO (gravidade e flexao)
-   Por metro linear de muro. Eixos:
-     x : a partir da PONTA (frente do muro), positivo para o aterro
-     y : a partir da BASE, positivo para cima
-     z : profundidade a partir do topo do aterro (z = Hw - y)
-   Plano de empuxo: vertical em x = B (fundo do talao, ou costas do muro
-   de gravidade). O empuxo vem de calcEmpuxos() sobre 0..Hw e o passivo
-   frontal de 0..D (D = embutimento da base abaixo do nivel da escavacao).
+   ETAPA 5 - Muro de contencao (flexao / gravidade)
+   Sistema de coordenadas: x = distancia horizontal a partir da PONTA DO PE
+   (x = 0) ate o fim do talao (x = B) ; y = altura medida a partir da BASE.
+   z = profundidade a partir do TOPO do aterro.
+   Empuxos: calculados no plano vertical virtual que passa pelo fim do
+   talao (x = B), com o motor de empuxos da Etapa 2. O solo acima do talao
+   e das costas do fuste entra como peso estabilizante.
+   Geometria: fuste trapezoidal (face frontal vertical em x = Lp; costas
+   inclinadas de bb na base ate bt no topo) sobre a sapata (altura hs).
+   Muro de gravidade = hs = 0, Lp = 0, Lt = 0 (so o fuste trapezoidal).
    ===================================================================== */
-const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const simpson=(f,a,b)=>(b-a)/6*(f(a)+4*f((a+b)/2)+f(b));
 
-// camada que contem a profundidade z (a ultima vai ate o fundo)
+// tensao vertical em z (camadas em cascata; a ultima vai ate o fundo) + q0
+function svAt(L,z,q0=0){
+  let s=q0,t=0;
+  for(let i=0;i<L.length;i++){
+    const th=(i===L.length-1)?1e12:L[i].t;
+    const d=Math.min(z-t,th);
+    if(d<=0) break;
+    s+=L[i].g*d; t+=th;
+  }
+  return s;
+}
+// camada que contem a profundidade z (em fronteira, a de baixo)
 function layerAtDepth(L,z){
   let t=0;
   for(let i=0;i<L.length;i++){
-    if(z<t+L[i].t-1e-12||i===L.length-1) return {l:L[i],i,top:t};
+    if(i===L.length-1||z<t+L[i].t-1e-9) return {i,l:L[i],top:t};
     t+=L[i].t;
   }
 }
-// integral de gama dz de 0 ate z (kPa)
-const soilColumn=(L,z)=>boundaries(L,z).reduce((a,b)=>a+b.l.g*(b.z2-b.z1),0);
 
-function wallGeom(w,H,D){
-  const grav=w.type==='gravidade', Hw=H+D, bt=w.bt, bb=w.bb;
-  const hs=grav?0:w.hs, lt=grav?0:w.lt, lh=grav?0:w.lh;
-  return {type:w.type,grav,Hw,bt,bb,hs,lt,lh,B:lt+bb+lh,hst:Hw-hs,gm:w.gm,
-          xb:lt+bb,xf:lt+bb-bt};
-}
-
-// partes do corpo do muro (pesos proprios e centroides)
-function wallParts(G){
-  const P=[],{bt,bb,hs,lt,hst,gm,B}=G, bf=bb-bt, nm=G.grav?'Muro':'Fuste';
-  if(hs>1e-9) P.push({name:'Sapata',W:gm*B*hs,x:B/2,y:hs/2});
-  if(bt*hst>1e-12) P.push({name:`${nm} (parte retangular)`,W:gm*bt*hst,x:lt+bb-bt/2,y:hs+hst/2});
-  if(bf>1e-9) P.push({name:`${nm} (parte triangular)`,W:gm*bf*hst/2,x:lt+2*bf/3,y:hs+hst/3});
-  P.forEach((p,i)=>p.id='W'+(i+1));
-  return P;
-}
-
-// Distribuicao de tensoes na base. N (kN/m), xR (m da ponta), B (m).
-// Retorna pts = [{z:x, v:sigma}] para integrar com integrate().
-function baseStress(N,xR,B){
-  const e=B/2-xR, r={N,xR,e,B};
-  if(!(N>0)||!(xR>0)||!(xR<B)){r.ok=false;return r;}
-  r.ok=true;
-  if(Math.abs(e)<=B/6+1e-9){
-    r.kern=true;r.Lc=B;
-    r.sigToe=N/B*(1+6*e/B);r.sigHeel=N/B*(1-6*e/B);
-    r.pts=[{z:0,v:r.sigToe},{z:B,v:r.sigHeel}];
-  }else if(e>0){
-    r.kern=false;r.Lc=3*xR;r.sigToe=2*N/r.Lc;r.sigHeel=0;
-    r.pts=[{z:0,v:r.sigToe},{z:r.Lc,v:0},{z:B,v:0}];
-  }else{
-    r.kern=false;r.Lc=3*(B-xR);r.sigToe=0;r.sigHeel=2*N/r.Lc;
-    r.pts=[{z:0,v:0},{z:B-r.Lc,v:0},{z:B,v:r.sigHeel}];
+// Distribuicao de tensoes na base (resultante a xR da ponta, base B)
+function baseStress(V,xR,B){
+  const e=B/2-xR;                              // + : resultante deslocada para a ponta
+  if(!(V>0)||!(xR>0)||!(xR<B)) return {ok:false,e,xR,sT:NaN,sH:NaN,Lc:0,kind:'out'};
+  if(Math.abs(e)<=B/6+1e-12){
+    return {ok:true,e,xR,sT:V/B*(1+6*e/B),sH:V/B*(1-6*e/B),Lc:B,kind:'full'};
   }
-  r.sigMax=Math.max(r.sigToe,r.sigHeel);r.sigMin=Math.min(r.sigToe,r.sigHeel);
-  return r;
+  if(e>0){ const Lc=3*xR;       return {ok:true,e,xR,sT:2*V/Lc,sH:0,Lc,kind:'toe'}; }
+  const Lc=3*(B-xR);            return {ok:true,e,xR,sT:0,sH:2*V/Lc,Lc,kind:'heel'};
+}
+// diagrama linear (pontos {z:x, v:sigma}) para usar com integrate()
+function sigmaPts(bs,B){
+  if(!bs.ok) return [];
+  if(bs.kind==='full') return [{z:0,v:bs.sT},{z:B,v:bs.sH}];
+  if(bs.kind==='toe')  return [{z:0,v:bs.sT},{z:bs.Lc,v:0}];
+  return [{z:B-bs.Lc,v:0},{z:B,v:bs.sH}];
 }
 
-// Capacidade de carga - Meyerhof (1963), sapata corrida, carga inclinada e
-// excentrica (largura efetiva Bp = B - 2e)
-function bearingMeyerhof(p){
-  const {phi,c,gam,Bp,Df,qo,N,Hh}=p;
-  const t=Math.tan(rad(phi)), Kp=Math.tan(rad(45+phi/2))**2, sK=Math.sqrt(Kp);
-  const Nq=Math.exp(Math.PI*t)*Kp;
-  const Nc=phi>0?(Nq-1)/t:5.14;
-  const Ng=(Nq-1)*Math.tan(rad(1.4*phi));
-  const r=Bp>0?Df/Bp:0;
-  const dc=1+0.2*sK*r, dq=phi>=10?1+0.1*sK*r:1, dg=dq;
-  const theta=Math.atan2(Math.max(Hh,0),N)*180/Math.PI;
-  const iq=(1-theta/90)**2, ic=iq, ig=(phi>0&&theta<phi)?(1-theta/phi)**2:0;
-  const qult=c*Nc*dc*ic+qo*Nq*dq*iq+0.5*gam*Bp*Ng*dg*ig;
-  const sig=N/Bp;
-  return {phi,c,gam,Bp,Df,qo,N,Hh,Nq,Nc,Ng,dc,dq,dg,ic,iq,ig,theta,qult,sig,
-          FS:sig>0?qult/sig:Infinity};
+// Fatores de capacidade de carga
+function capFactors(phi){
+  if(phi<=0.01) return {Nq:1,Nc:Math.PI+2,NgV:0,NgM:0};
+  const p=rad(phi),tp=Math.tan(p);
+  const Nq=Math.exp(Math.PI*tp)*Math.tan(rad(45+phi/2))**2;
+  return {Nq,Nc:(Nq-1)/tp,NgV:2*(Nq+1)*tp,NgM:(Nq-1)*Math.tan(1.4*p)};
+}
+// Fatores de inclinacao da carga (sapata corrida)
+function incFactors(method,phi,c,Bp,V,H,Nc){
+  const thd=Math.atan2(H,V)*180/Math.PI;
+  if(method==='meyerhof'){
+    const k=Math.max(0,1-thd/90)**2;
+    return {ic:k,iq:k,ig:phi>0?Math.max(0,1-thd/phi)**2:0,theta:thd};
+  }
+  const cot=phi>0?1/Math.tan(rad(phi)):0;
+  const r=Math.max(0,1-H/(V+Bp*c*cot));
+  const iq=r**2, ig=r**3;
+  let ic;
+  if(phi>0) ic=iq-(1-iq)/(Nc*Math.tan(rad(phi)));
+  else ic=c>0?1-2*H/(Bp*c*Nc):0;
+  return {ic:Math.max(0,ic),iq,ig,theta:thd};
 }
 
-/* inp = entradas de calcEmpuxos (com D = embutimento);
-   w = {type,bt,bb,hs,lt,lh,gm,fracP,kdelta,kadh,qHeelStab,useQo,FSt,FSd,FSc,gammaF} */
-function solveWall(inp,w){
-  const H=inp.H,D=inp.D,warn=[], n2=v=>v.toFixed(2).replace('.',',');
-  const G=wallGeom(w,H,D), out={ok:false,G,w,warn};
-  if(!(G.bb>0)||!(G.bt>0)){warn.push('Informe larguras do muro (topo e base) maiores que zero.');return out;}
-  if(G.bt>G.bb+1e-9) warn.push('Largura do topo maior que a da base do fuste.');
-  if(G.hst<=1e-9){warn.push('A sapata é mais alta que o muro (h + D). Reduza hs ou aumente D.');return out;}
-  if(!G.grav&&D<G.hs-1e-9) warn.push('Embutimento D menor que a espessura da sapata: a sapata fica acima do nível da escavação.');
+/* inp : entradas de calcEmpuxos (method,q,qP,deltaA,deltaP,beta,cutTension,
+         paLinear,pp1zero,layersA,layersP,fsP)
+   g   : {hf,bt,bb,hs,Lp,Lt,Df,gc}
+   o   : {FSt,FSd,FSc,deltaB,ca,capMethod,usePassive,soilToe,qStab,gf}      */
+function calcMuro(inp,g0,o){
+  const warn=[];
+  const g={...g0};
+  if(g.bt>g.bb){ g.bt=g.bb; warn.push('bt maior que bb: usei bt = bb (costas verticais).'); }
+  const gc=g.gc, hf=g.hf, hs=g.hs;
+  const B=g.Lp+g.bb+g.Lt, Htot=hf+hs;
+  let Df=Math.max(g.Df,0.01);
+  if(Df>Htot-0.05){ Df=Htot-0.05; warn.push('Embutimento Df limitado: a base não pode estar acima do topo do muro.'); }
+  const Hexc=Htot-Df;                       // altura do terreno a frente, abaixo do topo do aterro
+  const fsP=Math.max(1,inp.fsP||1);
   if(inp.method==='coulomb'&&Math.abs(inp.beta)>1e-9)
-    warn.push('β ≠ 0: o peso do solo sobre o talão considera terreno horizontal (aproximação); β entra só no Ka de Coulomb.');
+    warn.push('β só altera Ka: o peso do talude de aterro acima do talão não é considerado (ver Etapa 7 · terreno inclinado).');
 
-  const E=calcEmpuxos({...inp,D}); E.warn.forEach(x=>warn.push(x));
-  const A=integrate(E.ptsA,0,G.Hw), P=integrate(E.ptsP,0,D);
-  const Eh=A.E, ya=Eh>1e-9?G.Hw-A.zbar:0;
-  const Ep0=P.E, Epu=w.fracP*Ep0, yp=Ep0>1e-9?D-P.zbar:0;
-  const tanA=inp.method==='coulomb'?Math.tan(rad(inp.deltaA)):0;
-  const Ev=Eh*tanA;
+  /* ---------- empuxos no plano virtual (x = B) ---------- */
+  const emp=calcEmpuxos({...inp,H:Hexc,D:Df});
+  warn.push(...emp.warn);
+  const ptsA=emp.ptsA, ptsP=scalePts(emp.ptsP,1/fsP);
+  const EaH=emp.EaT.E, MovA=armMom(emp.EaT,Htot);
+  const yA=EaH>1e-12?MovA/EaH:0;
+  const dA=inp.method==='coulomb'?inp.deltaA:0;
+  const Eav=EaH*Math.tan(rad(dA));
+  const EpI=integrate(ptsP,0,Df);
+  const Ep=EpI.E, Mp=armMom(EpI,Df), yP=Ep>1e-12?Mp/Ep:0;
 
-  // ---- forcas verticais (por metro) ----
-  const F=wallParts(G).map(p=>({...p,stab:true,kind:'muro'}));
-  const zs=G.Hw-G.hs, svCol=soilColumn(inp.layersA,zs), xh=G.xb+G.lh/2;
-  if(G.lh>1e-9){
-    F.push({id:'Ws',name:'Solo sobre o talão',W:svCol*G.lh,x:xh,y:G.hs+zs/2,stab:true,kind:'solo'});
-    if(inp.q>0) F.push({id:'Wq',name:'Sobrecarga sobre o talão',W:inp.q*G.lh,x:xh,y:G.Hw,stab:!!w.qHeelStab,kind:'q'});
+  /* ---------- cargas verticais (x medido a partir da ponta) ---------- */
+  const items=[];
+  const Af=hf*(g.bb+g.bt)/2;
+  const xF=g.Lp+(g.bb**2+g.bb*g.bt+g.bt**2)/(3*(g.bb+g.bt));
+  const yF=hs+hf*(g.bb+2*g.bt)/(3*(g.bb+g.bt));
+  items.push({id:'W1',n:'Fuste (concreto)',W:Af*gc,x:xF,y:yF,kind:'c'});
+  if(hs>1e-9) items.push({id:'W2',n:'Sapata (concreto)',W:B*hs*gc,x:B/2,y:hs/2,kind:'c'});
+
+  // solo sobre o talao e sobre as costas inclinadas do fuste
+  const dw=g.bb-g.bt;
+  const w=z=>g.Lt+dw*(hf-z)/hf;                 // largura do solo em z (0..hf)
+  let Ws=0,Mxs=0;
+  boundaries(inp.layersA,hf).forEach(b=>{
+    if(b.z2-b.z1<1e-12) return;
+    Ws +=simpson(z=>b.l.g*w(z),b.z1,b.z2);
+    Mxs+=simpson(z=>b.l.g*w(z)*(B-w(z)/2),b.z1,b.z2);
+  });
+  if(Ws>1e-9) items.push({id:'W3',n:'Solo sobre o talão / costas do fuste',W:Ws,x:Mxs/Ws,y:hs+hf/2,kind:'s'});
+  // solo sobre a ponta do pe
+  const he=Df-hs;
+  if(o.soilToe&&he>1e-9&&g.Lp>1e-9){
+    const sq=svAt(inp.layersP,he,0);
+    items.push({id:'W4',n:'Solo sobre a ponta do pé',W:sq*g.Lp,x:g.Lp/2,y:hs+he/2,kind:'s'});
   }
-  F.forEach(f=>f.M=f.W*f.x);
-  const sumW=a=>a.reduce((s,f)=>s+f.W,0), sumM=a=>a.reduce((s,f)=>s+f.M,0);
-  const Fst=F.filter(f=>f.stab), Wst=sumW(Fst), Mw=sumM(Fst);
+  // sobrecarga sobre o talao
+  const w0=w(0), Wq=inp.q*w0;
+  const qItem={id:'Q',n:'Sobrecarga sobre o talão',W:Wq,x:B-w0/2,y:Htot,kind:'q'};
+  if(Wq>1e-9) items.push(qItem);
+  items.forEach(it=>it.M=it.W*it.x);
 
-  // ---- tombamento (em torno da ponta, x = 0) ----
-  const Mest=Mw+Ev*G.B+Epu*yp, Mover=Eh*ya;
-  const tomb={Mw,MEv:Ev*G.B,MEp:Epu*yp,Mest,Mover,FS:Mover>1e-9?Mest/Mover:Infinity};
+  const sumW=k=>items.filter(i=>k(i)).reduce((a,i)=>a+i.W,0);
+  const sumM=k=>items.filter(i=>k(i)).reduce((a,i)=>a+i.M,0);
+  const Wnq=sumW(i=>i.kind!=='q'), Mnq=sumM(i=>i.kind!=='q');
 
-  // ---- deslizamento na base ----
-  const bs=layerAtDepth(inp.layersP,D+1e-6), phiB=bs.l.phi, cB=bs.l.c, gB=bs.l.g;
-  const delta=w.kdelta*phiB, tanD=Math.tan(rad(delta));
-  const Ns=Wst+Ev, Fatr=Ns*tanD, Fad=w.kadh*cB*G.B, Fres=Fatr+Fad+Epu;
-  const desl={Ns,phiB,cB,gB,delta,tanD,Fatr,Fad,Fp:Epu,Fres,Eh,FS:Eh>1e-9?Fres/Eh:Infinity,layer:'P'+(bs.i+1)};
+  /* ---------- tombamento (em relacao a ponta do pe) ---------- */
+  const useQ=!!o.qStab;
+  const VS=Wnq+(useQ?Wq:0)+Eav;
+  const Mrest=Mnq+(useQ?qItem.M*(Wq>0?1:0):0)+Eav*B;
+  const MpUsed=o.usePassive?Mp:0;
+  const Mest=Mrest+MpUsed;
+  const tomb={Mest,Mrest,Mpas:MpUsed,Mov:MovA,Mvert:Eav*B,FS:MovA>1e-12?Mest/MovA:Infinity,req:o.FSt};
+  tomb.ok=tomb.FS>=tomb.req;
 
-  // ---- tensoes na base (cargas reais: inclui sobrecarga sobre o talao) ----
-  const Wall=sumW(F), Mall=sumM(F);
-  const N=Wall+Ev, Mv=Mall+Ev*G.B, Mh=Eh*ya-Epu*yp;
-  const base=baseStress(N,(Mv-Mh)/N,G.B);
-  base.Wall=Wall;base.Mv=Mv;base.Mh=Mh;
-  if(!base.ok) warn.push('A resultante cai fora da base: o muro tomba.');
-  else if(!base.kern) warn.push(`Excentricidade e = ${n2(base.e)} m fora do terço central (B/6 = ${n2(G.B/6)} m): parte da base perde contato.`);
+  /* ---------- tensoes na base (caso de carga total, passivo ignorado) ---------- */
+  const VT=Wnq+Wq+Eav, MT=Mnq+(Wq>0?qItem.M:0)+Eav*B;
+  const xR=(MT-MovA)/VT;
+  const bs=baseStress(VT,xR,B);
+  const sp=sigmaPts(bs,B);
+  const base={V:VT,M:MT,xR,e:B/2-xR,B,third:Math.abs(B/2-xR)<=B/6+1e-9,...bs};
+  if(!bs.ok) warn.push('Resultante fora da base: o muro tomba.');
+  else if(bs.kind!=='full') warn.push('Resultante fora do terço central: a base perde contato parcialmente (σmin = 0).');
 
-  // ---- capacidade de carga ----
-  let cap=null;
-  if(base.ok){
-    const Bp=G.B-2*Math.abs(base.e);
-    if(Bp>1e-6){
-      const front=!!w.useQo, Df=front?D:0;      // embutimento: sobrecarga gama*D e fator de profundidade
-      const qo=front&&E.rowsP.length?E.rowsP[E.rowsP.length-1].sv:0;
-      cap=bearingMeyerhof({phi:phiB,c:cB,gam:gB,Bp,Df,qo,N,Hh:Math.max(0,Eh-Epu)});
-    }
+  /* ---------- deslizamento ---------- */
+  const tanB=Math.tan(rad(o.deltaB));
+  const Rf=VS*tanB, Adh=(o.ca||0)*(bs.ok?bs.Lc:0), Rp=o.usePassive?Ep:0;
+  const desl={N:VS,delta:o.deltaB,Rf,Adh,Lc:bs.ok?bs.Lc:0,Rp,Hres:Rf+Adh+Rp,Ha:EaH,req:o.FSd};
+  desl.FS=EaH>1e-12?desl.Hres/EaH:Infinity; desl.ok=desl.FS>=desl.req;
+
+  /* ---------- capacidade de carga (sapata corrida, B' = B - 2e) ---------- */
+  const lf=layerAtDepth(inp.layersP,Df);
+  const phi=lf.l.phi,cf=lf.l.c,gf_=lf.l.g;
+  const q0=svAt(inp.layersP,Df,inp.qP);
+  const Bp=B-2*Math.abs(base.e);
+  const F=capFactors(phi), Ng=o.capMethod==='meyerhof'?F.NgM:F.NgV;
+  const cap={soil:'P'+(lf.i+1),phi,c:cf,g:gf_,q0,Bp,Nc:F.Nc,Nq:F.Nq,Ng,method:o.capMethod,req:o.FSc,V:VT,H:EaH};
+  if(bs.ok&&Bp>0){
+    const I=incFactors(o.capMethod,phi,cf,Bp,VT,EaH,F.Nc);
+    Object.assign(cap,{ic:I.ic,iq:I.iq,ig:I.ig,theta:I.theta});
+    cap.qc=cf*F.Nc*I.ic; cap.qq=q0*F.Nq*I.iq; cap.qg=0.5*gf_*Bp*Ng*I.ig;
+    cap.qult=cap.qc+cap.qq+cap.qg;
+    cap.sef=VT/Bp;
+    cap.FS=cap.qult/cap.sef;
+  }else{ Object.assign(cap,{ic:0,iq:0,ig:0,theta:0,qc:0,qq:0,qg:0,qult:0,sef:Infinity,FS:0}); }
+  cap.ok=cap.FS>=cap.req;
+
+  /* ---------- esforcos: fuste (engastado na sapata) ---------- */
+  const eS=integrate(ptsA,0,hf);
+  const stem={V:eS.E,M:eS.E*hf-eS.Mt,Vd:eS.E*o.gf,Md:(eS.E*hf-eS.Mt)*o.gf};
+  const pfS=perfis(ptsA,[],1e9,hf);
+  stem.S=pfS.S;
+
+  /* ---------- esforcos: sapata ---------- */
+  const qt=gc*hs+((o.soilToe&&he>1e-9)?svAt(inp.layersP,he,0):0);
+  let toe={V:0,M:0,x:g.Lp,q:qt};
+  if(g.Lp>1e-9&&sp.length){
+    const I=integrate(sp,0,g.Lp);
+    toe.V=I.E-qt*g.Lp; toe.M=g.Lp*I.E-I.Mt-qt*g.Lp*g.Lp/2;
+  }else if(g.Lp>1e-9){ toe.V=-qt*g.Lp; toe.M=-qt*g.Lp*g.Lp/2; }
+  toe.Vd=toe.V*o.gf; toe.Md=toe.M*o.gf;
+  const xb=g.Lp+g.bb, qh=svAt(inp.layersA,hf,inp.q)+gc*hs;
+  let heel={V:0,M:0,x:xb,q:qh};
+  if(g.Lt>1e-9){
+    const I=sp.length?integrate(sp,xb,B):{E:0,Mt:0};
+    heel.V=qh*g.Lt-I.E; heel.M=qh*g.Lt*g.Lt/2-(I.Mt-xb*I.E);
   }
+  heel.Vd=heel.V*o.gf; heel.Md=heel.M*o.gf;
 
-  // ---- fuste: esforcos por seccao (so empuxo horizontal) ----
-  const nS=60,S=[];
-  for(let k=0;k<=nS;k++){
-    const z=G.hst*k/nS, I=integrate(E.ptsA,0,z);
-    S.push({z,V:I.E,M:z*I.E-I.Mt});
-  }
-  const stem={S,Vk:S[nS].V,Mk:S[nS].M,hst:G.hst};
-
-  // ---- sapata (flexao): ponta e talao ----
-  let foot=null;
-  if(!G.grav&&G.hs>1e-9&&base.ok){
-    const It=integrate(base.pts,0,G.lt), Ih=integrate(base.pts,G.xb,G.B);
-    const wsF=G.gm*G.hs, wdown=svCol+inp.q+wsF;
-    foot={
-      wsF,wdown,
-      toe:{L:G.lt,Eup:It.E,V:It.E-wsF*G.lt,M:G.lt*It.E-It.Mt-wsF*G.lt*G.lt/2},
-      heel:{L:G.lh,Eup:Ih.E,wdown,V:wdown*G.lh-Ih.E,M:wdown*G.lh*G.lh/2-(Ih.Mt-G.xb*Ih.E)}
-    };
-  }
-
-  // ---- muro de gravidade: tensoes em secoes intermediarias ----
-  let sections=null;
-  if(G.grav){
-    sections=[0.25,0.5,0.75,1].map(fr=>{
-      const z=G.Hw*fr, bz=G.bt+(G.bb-G.bt)*fr, xf=G.bb-bz;
-      const wz=(G.bb-G.bt)*fr;
-      const Wr=G.gm*G.bt*z, xr=G.bb-G.bt/2, Wt=G.gm*wz*z/2, xt=(G.bb-G.bt)-wz/3;
-      const Ez=integrate(E.ptsA,0,z), Evz=Ez.E*tanA, arm=Ez.E>1e-9?z-Ez.zbar:0;
-      const Nz=Wr+Wt+Evz;
-      const xR=(Wr*(xr-xf)+Wt*(xt-xf)+Evz*bz-Ez.E*arm)/Nz, e=bz/2-xR;
-      const s=baseStress(Nz,xR,bz);
-      return {fr,z,b:bz,N:Nz,Ez:Ez.E,xR,e,ok:s.ok,kern:s.kern,sigMax:s.sigMax,sigMin:s.sigMin,Lc:s.Lc};
-    });
-  }
-
-  Object.assign(out,{ok:true,E,Eh,ya,Ep0,Epu,yp,Ev,tanA,F,Wst,tomb,desl,base,cap,stem,foot,sections,
-    FSt:tomb.FS,FSd:desl.FS,FSc:cap?cap.FS:0,
-    okT:tomb.FS>=w.FSt-1e-9,okD:desl.FS>=w.FSd-1e-9,okC:!!cap&&cap.FS>=w.FSc-1e-9,okK:base.ok&&base.kern});
-  return out;
+  const okAll=tomb.ok&&desl.ok&&cap.ok&&bs.ok;
+  return {ok:true,warn,g,B,Htot,Hexc,Df,emp,ptsA,ptsP,items,
+    Ea:{H:EaH,y:yA,Mov:MovA,v:Eav,delta:dA},Ep:{E:Ep,y:yP,M:Mp,used:!!o.usePassive,fs:fsP},
+    tomb,desl,base,sp,cap,stem,toe,heel,o,okAll};
 }
 </script>
 <script>
