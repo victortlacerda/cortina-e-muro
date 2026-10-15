@@ -75,11 +75,32 @@
   .charts{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
   @media(max-width:1100px){.charts{grid-template-columns:1fr}}
   .chart{border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff}
+  body.m-cortina .only-muro{display:none!important}
+  body.m-muro .only-cortina{display:none!important}
+  .seg.modeSw{width:auto}
+  .seg.modeSw button{padding:7px 14px;white-space:nowrap}
+  select{font:inherit;padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--text)}
+  .badge{display:inline-block;border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;margin-left:4px;vertical-align:middle}
+  .badge.ok{background:#dff5e8;color:#1a7f4b}
+  .badge.bad{background:#fde3e3;color:#b42f2f}
+  .stat.ok{background:#eefaf3;border-color:#bfe6cf}
+  .stat.ok b{color:#1a7f4b}
+  .stat.bad{background:#fdf0f0;border-color:#f3c3c3}
+  .stat.bad b{color:#b42f2f}
+  .verdict{border-radius:8px;padding:8px 10px;font-weight:700;margin-bottom:8px;font-size:13px}
+  .verdict.ok{background:#dff5e8;color:#1a7f4b}
+  .verdict.bad{background:#fde3e3;color:#b42f2f}
+  table.kt td{border-bottom:1px solid var(--line);padding:5px 8px}
+  table.kt td.l{white-space:normal}
+  table.kt td.u{color:var(--muted);width:1%}
+  tr.tot td{border-top:2px solid var(--blue-m)}
 </style>
 </head>
-<body>
+<body class="m-cortina">
 <header>
-  <h1>Cortinas em Balanço</h1><span class="tag">Etapas 2–4 · Empuxos, diagramas e ficha</span>
+  <h1>Contenções</h1>
+  <div class="seg modeSw" id="modeSw"><button data-md="cortina" class="on">Cortina em balanço</button><button data-md="muro">Muro de contenção</button></div>
+  <span class="tag" id="modeTag">Cortina em balanço · empuxos, diagramas e ficha</span>
   <div class="sp"></div>
   <button id="btnSave">Salvar projeto</button>
   <button id="btnLoad">Abrir projeto</button>
@@ -102,12 +123,29 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Geometria e carga</h2>
+    <div class="card only-cortina">
+      <h2>Geometria da cortina</h2>
       <div class="row"><label>Altura de contenção h</label><input type="number" id="H" value="5" step="any" min="0.5"> m</div>
       <div class="row"><label>Ficha D (profundidade analisada)</label><input type="number" id="D" value="4" step="any" min="0.5"> m</div>
+    </div>
+
+    <div class="card only-muro">
+      <h2>Geometria do muro</h2>
+      <div class="row"><label>Altura do fuste hf</label><input type="number" id="mHf" value="4" step="any" min="0.3"> m</div>
+      <div class="row"><label>Largura do topo do fuste bt</label><input type="number" id="mBt" value="0.3" step="any" min="0.05"> m</div>
+      <div class="row"><label>Largura da base do fuste bb</label><input type="number" id="mBb" value="0.5" step="any" min="0.05"> m</div>
+      <div class="row"><label>Espessura da sapata hs</label><input type="number" id="mHs" value="0.5" step="any" min="0"> m</div>
+      <div class="row"><label>Comprimento da ponta (pé) Lp</label><input type="number" id="mLp" value="1" step="any" min="0"> m</div>
+      <div class="row"><label>Comprimento do talão Lt</label><input type="number" id="mLt" value="2.8" step="any" min="0"> m</div>
+      <div class="row"><label>Embutimento da base Df (abaixo do terreno à frente)</label><input type="number" id="mDf" value="1" step="any" min="0"> m</div>
+      <div class="row"><label>Peso específico do concreto</label><input type="number" id="mGc" value="25" step="any" min="1"> kN/m³</div>
+      <div class="note">Face frontal vertical; costas inclinadas de bb (base) até bt (topo). Muro de gravidade: hs = 0, Lp = 0 e Lt = 0 (só o fuste trapezoidal, bb = largura da base).</div>
+    </div>
+
+    <div class="card">
+      <h2>Sobrecargas</h2>
       <div class="row"><label>Sobrecarga no topo q</label><input type="number" id="q" value="10" step="any" min="0"> kPa</div>
-      <div class="row"><label>Sobrecarga no fundo da vala qp</label><input type="number" id="qP" value="0" step="any" min="0"> kPa</div>
+      <div class="row"><label id="lblQP">Sobrecarga no fundo da vala qp</label><input type="number" id="qP" value="0" step="any" min="0"> kPa</div>
     </div>
 
     <div class="card">
@@ -115,21 +153,35 @@
       <label class="chk"><input type="checkbox" id="cutTension" checked> Zerar empuxo ativo negativo (zona de tração) — Pa1 = 0 se negativo</label>
       <label class="chk"><input type="checkbox" id="paLinear" checked> Pa1 = 0: diagrama ativo em triângulo de 0 (topo) até Pa2, como na folha. Desmarcado: corta na profundidade real de tração z0</label>
       <label class="chk"><input type="checkbox" id="pp1zero" checked> Pp1 = 0 no nível da escavação (passivo triangular)</label>
-      <div class="row"><label>Fator da ficha de projeto (× Z)</label><input type="number" id="fichaF" value="1.2" step="any" min="1"></div>
+      <div class="row only-cortina"><label>Fator da ficha de projeto (× Z)</label><input type="number" id="fichaF" value="1.2" step="any" min="1"></div>
       <div class="row"><label>FS aplicado ao empuxo passivo</label><input type="number" id="fsP" value="1" step="any" min="1"></div>
     </div>
 
+    <div class="card only-muro">
+      <h2>Verificações do muro</h2>
+      <div class="row"><label>Atrito base–solo δb</label><input type="number" id="mDb" value="22" step="any" min="0"> °</div>
+      <div class="row"><label>Adesão base–solo ca</label><input type="number" id="mCa" value="0" step="any" min="0"> kPa</div>
+      <div class="row"><label>Capacidade de carga</label><select id="mCap"><option value="meyerhof">Meyerhof</option><option value="vesic">Vesic</option></select></div>
+      <div class="row"><label>FS mínimo — tombamento</label><input type="number" id="mFSt" value="2" step="any" min="0.1"></div>
+      <div class="row"><label>FS mínimo — deslizamento</label><input type="number" id="mFSd" value="1.5" step="any" min="0.1"></div>
+      <div class="row"><label>FS mínimo — capacidade de carga</label><input type="number" id="mFSc" value="3" step="any" min="0.1"></div>
+      <div class="row"><label>Majoração dos esforços γf</label><input type="number" id="mGf" value="1.4" step="any" min="1"></div>
+      <label class="chk"><input type="checkbox" id="mUsePas"> Considerar o empuxo passivo frontal (dividido pelo FS do passivo) no tombamento e no deslizamento</label>
+      <label class="chk"><input type="checkbox" id="mSoilToe" checked> Considerar o peso do solo sobre a ponta do pé</label>
+      <label class="chk"><input type="checkbox" id="mQStab"> Considerar a sobrecarga sobre o talão como estabilizante (tombamento e deslizamento; nas tensões da base ela sempre entra)</label>
+    </div>
+
     <div class="card">
-      <h2>Camadas — lado ativo (solo contido)</h2>
+      <h2 id="hA">Camadas — lado ativo (solo contido)</h2>
       <table><thead><tr><th>#</th><th>Esp. (m)</th><th>φ (°)</th><th>c (kPa)</th><th>γ (kN/m³)</th><th></th></tr></thead><tbody id="tA"></tbody></table>
       <button class="add" data-add="A">+ Adicionar camada</button>
     </div>
 
     <div class="card">
-      <h2>Camadas — lado passivo (escavação)</h2>
+      <h2 id="hP">Camadas — lado passivo (escavação)</h2>
       <table><thead><tr><th>#</th><th>Esp. (m)</th><th>φ (°)</th><th>c (kPa)</th><th>γ (kN/m³)</th><th></th></tr></thead><tbody id="tP"></tbody></table>
       <button class="add" data-add="P">+ Adicionar camada</button>
-      <div class="note" style="margin-top:8px">A última camada de cada lado se estende até o fundo. Camadas passivas contam a partir do nível da escavação.</div>
+      <div class="note" id="noteP" style="margin-top:8px">A última camada de cada lado se estende até o fundo. Camadas passivas contam a partir do nível da escavação.</div>
     </div>
   </section>
 
@@ -138,17 +190,29 @@
     <div class="card res" id="results"><h2>Resultados</h2>
       <div class="tabs" id="tabs">
         <button data-tab="emp" class="on">Empuxos</button>
-        <button data-tab="ficha">Ficha</button>
-        <button data-tab="diag">Diagramas</button>
+        <button data-tab="estab" class="only-muro">Estabilidade</button>
+        <button data-tab="esf" class="only-muro">Esforços</button>
+        <button data-tab="ficha" class="only-cortina">Ficha</button>
+        <button data-tab="diag" class="only-cortina">Diagramas</button>
       </div>
       <div class="pane" id="pane-emp"></div>
+      <div class="pane" id="pane-estab" hidden></div>
+      <div class="pane" id="pane-esf" hidden></div>
       <div class="pane" id="pane-ficha" hidden></div>
       <div class="pane" id="pane-diag" hidden></div>
     </div>
   </section>
 
   <section class="right">
-    <div class="card">
+    <div class="card res only-muro">
+      <h2>Verificações</h2>
+      <div id="muroChk"></div>
+    </div>
+    <div class="card res only-muro">
+      <h2>Resumo do muro</h2>
+      <div id="muroSum"></div>
+    </div>
+    <div class="card only-cortina">
       <h2>Resumo</h2>
       <div class="kv"><span>Método</span><b id="sMethod"></b></div>
       <div class="kv"><span>h</span><b id="sH"></b></div>
@@ -159,17 +223,17 @@
       <div class="kv"><span>Camadas passivas</span><b id="sNP"></b></div>
       <div id="warn" class="warn"></div>
     </div>
-    <div class="card res">
+    <div class="card res only-cortina">
       <h2>Dimensionamento</h2>
       <div id="dimBody"></div>
     </div>
-    <div class="card res">
+    <div class="card res only-cortina">
       <h2>Valores-chave</h2>
       <div id="keyVals"></div>
     </div>
     <div class="card">
       <h2>Convenção</h2>
-      <div class="note">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z.</div>
+      <div class="note" id="convTxt">Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z.</div>
     </div>
   </section>
 </main>
@@ -685,6 +749,8 @@ function calcMuro(inp,g0,o){
 <script>
 const PAL=['#fdf0c9','#d9f2d4','#d3d9f4','#f6dfe0','#e3ddf0','#ffe3c7','#d1eef2'];
 const st={
+  mode:'cortina',
+  lay:{cortina:null,muro:{A:[{t:1,phi:30,c:0,g:18}],P:[{t:1,phi:28,c:10,g:18}]}},
   method:'rankine',
   layersA:[{t:1.5,phi:30,c:0,g:18},{t:1.0,phi:28,c:5,g:18},{t:3,phi:22,c:15,g:17}],
   layersP:[{t:1.5,phi:30,c:0,g:18},{t:3,phi:28,c:10,g:18}]
@@ -736,9 +802,11 @@ function kTable(list,side,method){
     list.map(k=>`<tr><td>${side}${k.i+1}</td><td>${k.phi}</td><td class="hi">${f3(k.Ktot)}</td>${method==='coulomb'?`<td>${f3(k.K)}</td>`:''}<td>${f3(Math.sqrt(k.Kc))}</td></tr>`).join('')+'</tbody></table></div>';
 }
 
-function memoria(res,inp){
+function memoria(res,inp,mode){
   const L=[];
-  L.push(`MÉTODO: ${res.method==='rankine'?'Rankine':'Coulomb'}   h = ${f2(res.H)} m   D = ${f2(res.D)} m   q = ${f2(inp.q)} kPa   qp = ${f2(inp.qP)} kPa`);
+  L.push(mode==='muro'
+    ?`MÉTODO: ${res.method==='rankine'?'Rankine':'Coulomb'}   altura total = ${f2(res.total)} m   terreno à frente a ${f2(res.H)} m do topo   Df = ${f2(res.D)} m   q = ${f2(inp.q)} kPa   qp = ${f2(inp.qP)} kPa`
+    :`MÉTODO: ${res.method==='rankine'?'Rankine':'Coulomb'}   h = ${f2(res.H)} m   D = ${f2(res.D)} m   q = ${f2(inp.q)} kPa   qp = ${f2(inp.qP)} kPa`);
   L.push('');
   L.push('LADO ATIVO  (Pa = σv·Ka − 2c·√Ka)');
   res.rowsA.forEach((r,i)=>{
@@ -757,18 +825,22 @@ function memoria(res,inp){
   return L.join('\n');
 }
 
-function renderResults(inp,fic){
-  const res=calcEmpuxos(inp);
-  window.lastRes=res;
+function empHTML(res,inp,mode){
   let h='';
   if(res.warn.length) h+=`<div class="warn" style="margin-bottom:8px">${[...new Set(res.warn)].join('<br>')}</div>`;
   if(inp.method==='coulomb') h+='<div class="note" style="margin-bottom:8px">Coulomb: parede vertical (α = 90°). Parcela de peso usa Ka·cos δ (componente horizontal); a coesão usa 2c√Ka com o Ka de Coulomb. β vale só no lado ativo; o fundo da vala é horizontal.</div>';
   h+='<h3>Coeficientes — lado ativo</h3>'+kTable(res.kA,'A',inp.method);
   h+='<h3>Coeficientes — lado passivo</h3>'+kTable(res.kP,'P',inp.method);
   h+='<h3>Empuxo ativo por profundidade</h3>'+pressureTable(res.rowsA,'A');
-  h+='<h3>Empuxo passivo por profundidade (a partir do nível da escavação)</h3>'+pressureTable(res.rowsP,'P');
-  h+=`<details><summary>Memória de cálculo passo a passo</summary><pre class="mem">${memoria(res,inp).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></details>`;
-  $('pane-emp').innerHTML=h;
+  h+=(mode==='muro'?'<h3>Empuxo passivo por profundidade (a partir do terreno à frente do muro)</h3>':'<h3>Empuxo passivo por profundidade (a partir do nível da escavação)</h3>')+pressureTable(res.rowsP,'P');
+  h+=`<details><summary>Memória de cálculo passo a passo</summary><pre class="mem">${memoria(res,inp,mode).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre></details>`;
+  return h;
+}
+
+function renderResults(inp,fic){
+  const res=calcEmpuxos(inp);
+  window.lastRes=res;
+  $('pane-emp').innerHTML=empHTML(res,inp,'cortina');
 
   // valores-chave (coluna da direita)
   const kv=(n,v,u='kPa')=>`<div class="kv"><span>${n}</span><b>${v} ${u}</b></div>`;
@@ -836,10 +908,10 @@ function chartSVG(o){
   s+=`<line x1="${X(0)}" y1="${mt}" x2="${X(0)}" y2="${mt+ph}" stroke="#1b2a41" stroke-width="1.6"/>`;
   const hl=(z,label,col)=>{ if(z<0||z>o.zMax+1e-9) return '';
     return `<line x1="${ml}" y1="${Y(z)}" x2="${ml+pw}" y2="${Y(z)}" stroke="${col}" stroke-dasharray="5 4"/>
-    <text x="${ml+pw-2}" y="${Y(z)-3}" font-size="10" fill="${col}" text-anchor="end" font-weight="600">${label}</text>`; };
-  s+=hl(o.H,'escavação (z = h)','#6b7c93');
+    <text x="${o.cLabel?ml+6:ml+pw-2}" y="${Y(z)-3}" font-size="10" fill="${col}" text-anchor="${o.cLabel?'start':'end'}" font-weight="600">${label}</text>`; };
+  if(o.H!==undefined&&o.H!==null) s+=hl(o.H,o.hLabel||'escavação (z = h)','#6b7c93');
   if(o.zO!==undefined) s+=hl(o.zO,'O','#d9622b');
-  s+=hl(o.zC,'C','#154ea8');
+  if(o.zC!==undefined) s+=hl(o.zC,o.cLabel||'C','#154ea8');
   (o.marks||[]).forEach(m=>{
     s+=`<circle cx="${X(m.x)}" cy="${Y(m.z)}" r="4" fill="#fff" stroke="#d64545" stroke-width="2"/>`;
     const right=X(m.x)<ml+pw*0.6;
@@ -927,6 +999,325 @@ function renderDimCard(inp,fic){
     (pf?kv('Mmax',fv(Math.abs(pf.Mmax)),'kN·m/m')+kv('Vmax',fv(Math.abs(pf.Vmax)),'kN/m'):'');
 }
 
+/* =====================================================================
+   MURO DE CONTENCAO - interface (Etapa 5)
+   ===================================================================== */
+const escH=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const fsx=v=>isFinite(v)?f2(v):'∞';
+const badge=(ok,a='OK',b='NÃO OK')=>`<span class="badge ${ok?'ok':'bad'}">${ok?a:b}</span>`;
+const MURO_IDS=['mHf','mBt','mBb','mHs','mLp','mLt','mDf','mGc','mDb','mCa','mFSt','mFSd','mFSc','mGf'];
+const MURO_CHK=['mUsePas','mSoilToe','mQStab'];
+
+function getMuro(){
+  const P=(id,d,mn=0)=>Math.max(mn,num(id,d));
+  return {
+    g:{hf:P('mHf',4,0.3),bt:P('mBt',0.3,0.05),bb:P('mBb',0.5,0.05),hs:P('mHs',0.5),
+       Lp:P('mLp',1),Lt:P('mLt',2.8),Df:P('mDf',1),gc:P('mGc',25,1)},
+    o:{FSt:P('mFSt',2,0.1),FSd:P('mFSd',1.5,0.1),FSc:P('mFSc',3,0.1),
+       deltaB:Math.min(45,P('mDb',22)),ca:P('mCa',0),capMethod:$('mCap').value,
+       usePassive:$('mUsePas').checked,soilToe:$('mSoilToe').checked,qStab:$('mQStab').checked,
+       gf:P('mGf',1.4,1)}};
+}
+
+/* ---------- modo (cortina / muro) ---------- */
+function applyMode(){
+  const m=st.mode, mu=m==='muro';
+  document.body.classList.toggle('m-cortina',!mu);
+  document.body.classList.toggle('m-muro',mu);
+  document.querySelectorAll('#modeSw button').forEach(b=>b.classList.toggle('on',b.dataset.md===m));
+  $('modeTag').textContent=mu?'Muro de contenção · estabilidade e esforços':'Cortina em balanço · empuxos, diagramas e ficha';
+  $('hA').textContent=mu?'Camadas — aterro (lado ativo)':'Camadas — lado ativo (solo contido)';
+  $('hP').textContent=mu?'Camadas — solo à frente e fundação (lado passivo)':'Camadas — lado passivo (escavação)';
+  $('noteP').textContent=mu
+    ?'A última camada de cada lado se estende até o fundo. As camadas passivas contam a partir do terreno à frente do muro; o solo de fundação (φ, c e γ da capacidade de carga) é a camada que contém a cota da base.'
+    :'A última camada de cada lado se estende até o fundo. Camadas passivas contam a partir do nível da escavação.';
+  $('lblQP').textContent=mu?'Sobrecarga no terreno à frente qp':'Sobrecarga no fundo da vala qp';
+  $('convTxt').textContent=mu
+    ?'Terreno à frente (passivo) à esquerda; aterro e sobrecarga (ativo) à direita. x é medido a partir da ponta do pé; o empuxo ativo atua no plano vertical x = B (fim do talão). Valores por metro linear de muro.'
+    :'Escavação (passivo) à esquerda; solo contido e sobrecarga (ativo) à direita. Cálculo de ficha sem tirantes: Z = x + x′ e ficha de projeto = 1,2·Z.';
+  document.title=mu?'Contenções - Muro de contenção':'Contenções - Cortina em balanço';
+}
+function setMode(m){
+  if(m===st.mode) return;
+  st.lay[st.mode]={A:st.layersA,P:st.layersP};
+  st.mode=m; st.layersA=st.lay[m].A; st.layersP=st.lay[m].P;
+  window.curTab='emp';
+  applyMode(); refresh();
+}
+
+/* ---------- tabelas auxiliares ---------- */
+const kt=rows=>`<div class="tw"><table class="kt"><tbody>`+rows.map(r=>
+  `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td class="l u">${r[2]||''}</td></tr>`).join('')+`</tbody></table></div>`;
+
+/* ---------- aba Estabilidade ---------- */
+function estabHTML(inp,m){
+  const {tomb,desl,base,cap,Ea,Ep,o,g}=m;
+  let h='';
+  const w=[...new Set(m.warn)];
+  if(w.length) h+=`<div class="warn" style="margin-bottom:8px">${w.map(escH).join('<br>')}</div>`;
+  const stat=(l,v,u,ok)=>`<div class="stat ${ok?'ok':'bad'}"><small>${l}</small><b>${v}</b><small class="u">${u} ${badge(ok)}</small></div>`;
+  h+=`<div class="stats">
+    ${stat('Tombamento · FS',fsx(tomb.FS),`mínimo ${fv(tomb.req)}`,tomb.ok)}
+    ${stat('Deslizamento · FS',fsx(desl.FS),`mínimo ${fv(desl.req)}`,desl.ok)}
+    ${stat('Capacidade de carga · FS',fsx(cap.FS),`mínimo ${fv(cap.req)}`,cap.ok)}</div>`;
+
+  // cargas verticais
+  const sigW=m.items.filter(i=>i.kind!=='q'||o.qStab);
+  let rows=m.items.map(it=>`<tr><td>${it.id}</td><td class="l">${escH(it.n)}${it.kind==='q'&&!o.qStab?' <span class="tag2">só nas tensões</span>':''}</td><td>${fv(it.W)}</td><td>${fv(it.x)}</td><td>${fv(it.M)}</td></tr>`).join('');
+  if(Ea.v>1e-9) rows+=`<tr><td>Ea,v</td><td class="l">Componente vertical do empuxo ativo (δ = ${fv(Ea.delta)}°), em x = B</td><td>${fv(Ea.v)}</td><td>${fv(m.B)}</td><td>${fv(Ea.v*m.B)}</td></tr>`;
+  rows+=`<tr class="tot"><td></td><td class="l"><b>Σ cargas para as tensões na base</b></td><td class="hi">${fv(base.V)}</td><td class="hi">${fv(base.xR)}</td><td class="hi">${fv(base.M)}</td></tr>`;
+  h+=`<h3>Cargas verticais e momentos em relação à ponta do pé</h3><div class="tw"><table><thead><tr><th>Item</th><th class="l">Descrição</th><th>W (kN/m)</th><th>x (m)</th><th>M (kN·m/m)</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="note">x = braço a partir da ponta do pé. Na última linha, x é a posição da resultante já descontado o momento tombador (x<sub>R</sub> = (ΣM − M<sub>ov</sub>)/ΣV).</div>`;
+
+  // empuxos
+  h+=`<h3>Empuxos horizontais (plano vertical em x = B)</h3><div class="tw"><table><thead><tr><th class="l">Força</th><th>E (kN/m)</th><th>altura y (m)</th><th>momento (kN·m/m)</th></tr></thead><tbody>
+    <tr><td class="l">Ea — ativo (0 → ${fv(m.Htot)} m)</td><td class="hi">${fv(Ea.H)}</td><td>${fv(Ea.y)}</td><td>${fv(Ea.Mov)}</td></tr>
+    <tr><td class="l">Ep — passivo frontal${Ep.fs!==1?` (÷ FS = ${fv(Ep.fs)})`:''} ${Ep.used?'':'<span class="tag2">não considerado</span>'}</td><td>${fv(Ep.E)}</td><td>${fv(Ep.y)}</td><td>${fv(Ep.M)}</td></tr>
+    </tbody></table></div>`;
+
+  // tombamento
+  h+=`<h3>Tombamento ${badge(tomb.ok)}</h3>`+kt([
+    ['Momento dos pesos'+(o.qStab?' (inclui a sobrecarga)':''),fv(tomb.Mrest-tomb.Mvert),'kN·m/m'],
+    ...(tomb.Mvert>1e-9?[['Momento da componente vertical de Ea',fv(tomb.Mvert),'kN·m/m']]:[]),
+    ...(o.usePassive?[['Momento do passivo frontal',fv(tomb.Mpas),'kN·m/m']]:[]),
+    ['<b>Σ M estabilizante</b>',`<b>${fv(tomb.Mest)}</b>`,'kN·m/m'],
+    ['Momento tombador M<sub>ov</sub> = Ea · y',fv(tomb.Mov),'kN·m/m'],
+    ['<b>FS = Σ M estab. / M<sub>ov</sub></b>',`<b>${fsx(tomb.FS)}</b>`,`mínimo ${fv(tomb.req)}`]]);
+
+  // deslizamento
+  h+=`<h3>Deslizamento ${badge(desl.ok)}</h3>`+kt([
+    ['Carga normal N'+(o.qStab?' (com sobrecarga)':''),fv(desl.N),'kN/m'],
+    [`Atrito: N · tan δb (δb = ${fv(desl.delta)}°)`,fv(desl.Rf),'kN/m'],
+    [`Adesão: ca · Lc (ca = ${fv(o.ca)} kPa, Lc = ${fv(desl.Lc)} m)`,fv(desl.Adh),'kN/m'],
+    ...(o.usePassive?[['Passivo frontal'+(Ep.fs!==1?' (÷ FS)':''),fv(desl.Rp),'kN/m']]:[]),
+    ['Resistência total',fv(desl.Hres),'kN/m'],
+    ['Empuxo ativo Ea',fv(desl.Ha),'kN/m'],
+    ['<b>FS = resistência / Ea</b>',`<b>${fsx(desl.FS)}</b>`,`mínimo ${fv(desl.req)}`]]);
+
+  // tensoes na base
+  const kindTxt={full:'base totalmente comprimida (e ≤ B/6)',toe:'contato parcial: triângulo sob a ponta (e > B/6)',heel:'contato parcial: triângulo sob o talão (e > B/6)',out:'resultante fora da base'}[base.kind];
+  h+=`<h3>Tensões na base ${badge(base.ok&&base.third,'terço central','fora do terço central')}</h3>`+kt([
+    ['Largura da base B',fv(m.B),'m'],
+    ['Carga vertical ΣV',fv(base.V),'kN/m'],
+    ['Posição da resultante x<sub>R</sub> (a partir da ponta)',fv(base.xR),'m'],
+    ['Excentricidade e = B/2 − x<sub>R</sub> (+ para o lado da ponta)',fv(base.e),'m'],
+    ['Limite do terço central B/6',fv(m.B/6),'m'],
+    ['σ sob a ponta',fv(base.sT),'kPa'],
+    ['σ sob o fim do talão',fv(base.sH),'kPa'],
+    ['Situação',kindTxt,'']]);
+
+  // capacidade de carga
+  const mt=o.capMethod==='meyerhof'?'Meyerhof':'Vesic';
+  h+=`<h3>Capacidade de carga (${mt}) ${badge(cap.ok)}</h3>`+kt([
+    [`Solo de fundação (${cap.soil})`,`φ = ${fv(cap.phi)}° · c = ${fv(cap.c)} kPa · γ = ${fv(cap.g)} kN/m³`,''],
+    ['Sobrecarga lateral na cota da base q₀ = σ′v',fv(cap.q0),'kPa'],
+    ['Largura efetiva B′ = B − 2|e|',fv(cap.Bp),'m'],
+    ['Fatores Nc · Nq · Nγ',`${fv(cap.Nc)} · ${fv(cap.Nq)} · ${fv(cap.Ng)}`,''],
+    [`Inclinação da carga θ = atan(H/V) = ${fv(cap.theta)}° → ic · iq · iγ`,`${f3(cap.ic)} · ${f3(cap.iq)} · ${f3(cap.ig)}`,''],
+    ['Parcelas: c·Nc·ic + q₀·Nq·iq + ½·γ·B′·Nγ·iγ',`${fv(cap.qc)} + ${fv(cap.qq)} + ${fv(cap.qg)}`,'kPa'],
+    ['<b>Tensão última q<sub>ult</sub></b>',`<b>${fv(cap.qult)}</b>`,'kPa'],
+    ['Tensão média na largura efetiva σ = ΣV / B′',fv(cap.sef),'kPa'],
+    ['<b>FS = q<sub>ult</sub> / σ</b>',`<b>${fsx(cap.FS)}</b>`,`mínimo ${fv(cap.req)}`]])+
+    `<div class="note">Sapata corrida (sem fatores de forma). Sem fatores de profundidade (conservador). O passivo frontal não entra nas tensões nem na capacidade de carga.</div>`;
+
+  // memoria
+  const L=[];
+  L.push(`Muro: hf = ${fv(g.hf)} m · bt = ${fv(g.bt)} · bb = ${fv(g.bb)} · hs = ${fv(g.hs)} · Lp = ${fv(g.Lp)} · Lt = ${fv(g.Lt)} · Df = ${fv(m.Df)} m  →  B = ${fv(m.B)} m, H = ${fv(m.Htot)} m`);
+  L.push('');
+  L.push(`1) Empuxo ativo (${inp.method==='rankine'?'Rankine':'Coulomb'}): Ea = ${fv(Ea.H)} kN/m a ${fv(Ea.y)} m da base → M_ov = ${fv(Ea.Mov)} kN·m/m`);
+  L.push(`2) Tombamento: ΣM_est = ${fv(tomb.Mest)} ;  FS = ${fv(tomb.Mest)} / ${fv(tomb.Mov)} = ${fsx(tomb.FS)}  (mín. ${fv(tomb.req)})`);
+  L.push(`3) Deslizamento: ${fv(desl.N)}·tan(${fv(desl.delta)}°) + ${fv(desl.Adh)} + ${fv(desl.Rp)} = ${fv(desl.Hres)} ;  FS = ${fv(desl.Hres)} / ${fv(desl.Ha)} = ${fsx(desl.FS)}  (mín. ${fv(desl.req)})`);
+  L.push(`4) Base: x_R = (${fv(base.M)} − ${fv(Ea.Mov)}) / ${fv(base.V)} = ${fv(base.xR)} m ;  e = ${fv(base.e)} m ;  σ_ponta = ${fv(base.sT)} kPa, σ_talão = ${fv(base.sH)} kPa`);
+  L.push(`5) Capacidade: B′ = ${fv(cap.Bp)} m ;  q_ult = ${fv(cap.qult)} kPa ;  FS = ${fv(cap.qult)} / ${fv(cap.sef)} = ${fsx(cap.FS)}  (mín. ${fv(cap.req)})`);
+  h+=`<details><summary>Passo a passo</summary><pre class="mem">${escH(L.join('\n'))}</pre></details>`;
+  return h;
+}
+
+/* ---------- aba Esforcos ---------- */
+function esfHTML(inp,m){
+  const {stem,toe,heel,g,o}=m;
+  const stat=(l,v,u)=>`<div class="stat"><small>${l}</small><b>${v}</b><small class="u">${u}</small></div>`;
+  let h=`<div class="stats">
+    ${stat('Fuste · Md na base',fv(stem.Md),'kN·m/m (γf = '+fv(o.gf)+')')}
+    ${stat('Fuste · Vd na base',fv(stem.Vd),'kN/m')}
+    ${stat('Pé · Md na face do fuste',fv(Math.abs(toe.Md)),'kN·m/m')}
+    ${stat('Talão · Md na face das costas',fv(Math.abs(heel.Md)),'kN·m/m')}</div>`;
+  const S=stem.S;
+  const V=S.map(p=>({x:p.V,z:p.z})), M=S.map(p=>({x:p.M,z:p.z}));
+  const base={zMax:g.hf,zC:g.hf,cLabel:'base do fuste'};
+  const c1=chartSVG({...base,title:'Fuste · cortante V',unit:'kN/m  ·  z a partir do topo do aterro',
+    series:[{pts:V,fill:'#cfe0fb',stroke:C_LIN}],marks:[{x:stem.V,z:g.hf,label:`V = ${fv(stem.V)}`}]});
+  const c2=chartSVG({...base,title:'Fuste · momento fletor M',unit:'kN·m/m  ·  tração no lado do aterro',
+    series:[{pts:M,fill:'#cfe0fb',stroke:C_LIN}],marks:[{x:stem.M,z:g.hf,label:`M = ${fv(stem.M)}`}]});
+  h+=`<div class="charts" style="margin-top:12px">${[c1,c2].map(c=>`<div class="chart">${c}</div>`).join('')}</div>`;
+  const row=(n,x,V,M,Vd,Md,t)=>`<tr><td class="l">${n}</td><td>${fv(x)}</td><td>${fv(V)}</td><td>${fv(M)}</td><td class="hi">${fv(Vd)}</td><td class="hi">${fv(Md)}</td><td class="l">${t}</td></tr>`;
+  h+=`<h3>Seções críticas (por metro de muro)</h3><div class="tw"><table><thead><tr><th class="l">Seção</th><th>x (m)</th><th>V (kN/m)</th><th>M (kN·m/m)</th><th>Vd (kN/m)</th><th>Md (kN·m/m)</th><th class="l">Tração</th></tr></thead><tbody>
+    ${row('Base do fuste (engaste na sapata)',g.Lp,stem.V,stem.M,stem.Vd,stem.Md,'lado do aterro (costas)')}
+    ${g.Lp>1e-9?row('Pé (ponta) — face frontal do fuste',toe.x,toe.V,toe.M,toe.Vd,toe.Md,toe.M>=0?'face inferior':'face superior'):''}
+    ${g.Lt>1e-9?row('Talão — face das costas do fuste',heel.x,heel.V,heel.M,heel.Vd,heel.Md,heel.M>=0?'face superior':'face inferior'):''}
+    </tbody></table></div>
+    <div class="note">Esforços característicos × γf = ${fv(o.gf)} (valores de cálculo Vd e Md). Pé: tensão do solo na base menos o peso próprio da sapata${o.soilToe?' e do solo sobre a ponta':''} (carga ${fv(toe.q)} kPa). Talão: peso do solo, sobrecarga e sapata (${fv(heel.q)} kPa) menos a tensão do solo na base. O empuxo no fuste usa a pressão ativa do plano virtual, com o fuste engastado na sapata.</div>`;
+  return h;
+}
+
+/* ---------- cartoes laterais ---------- */
+function renderMuroCards(inp,m){
+  const kv=(n,v,u='')=>`<div class="kv"><span>${n}</span><b>${v}${u?' '+u:''}</b></div>`;
+  const Wc=m.items.filter(i=>i.kind==='c').reduce((a,i)=>a+i.W,0);
+  $('muroSum').innerHTML=
+    kv('Método',inp.method==='rankine'?'Rankine':'Coulomb')+
+    kv('Altura total H = hf + hs',fv(m.Htot),'m')+
+    kv('Largura da base B',fv(m.B),'m')+
+    kv('Embutimento Df',fv(m.Df),'m')+
+    kv('Peso do concreto',fv(Wc),'kN/m')+
+    kv('Carga vertical ΣV',fv(m.base.V),'kN/m')+
+    kv('Empuxo ativo Ea',fv(m.Ea.H),'kN/m')+
+    kv('Sobrecarga q',fv(inp.q),'kPa');
+  const row=(n,r)=>`<div class="kv"><span>${n}</span><b>${fsx(r.FS)} ${badge(r.ok)}</b></div>`;
+  $('muroChk').innerHTML=
+    `<div class="verdict ${m.okAll?'ok':'bad'}">${m.okAll?'Todas as verificações atendidas':'Há verificações não atendidas'}</div>`+
+    row('Tombamento · FS',m.tomb)+row('Deslizamento · FS',m.desl)+row('Capacidade de carga · FS',m.cap)+
+    kv('Excentricidade e',fv(m.base.e),'m')+
+    `<div class="kv"><span>Terço central (e ≤ B/6)</span><b>${badge(m.base.ok&&m.base.third,'sim','não')}</b></div>`+
+    kv('σ ponta / σ talão',`${fv(m.base.sT)} / ${fv(m.base.sH)}`,'kPa')+
+    kv('Md fuste (base)',fv(m.stem.Md),'kN·m/m');
+}
+
+/* ---------- esquema do muro ---------- */
+function drawMuro(inp,m){
+  const g=m.g,B=m.B,Htot=m.Htot,Hexc=m.Hexc,Df=m.Df,hf=g.hf,hs=g.hs,q=inp.q,o=m.o;
+  const zSap=Htot-hs;
+  const Wf=Math.max(1.4,g.Lp+1.0), Wb=Math.max(2.2,0.7*Htot), hFund=Math.max(0.8,0.22*Htot);
+  const totW=Wf+B+Wb, totH=Htot+hFund;
+  const x0=74,xEnd=650,y0=122,yEnd=410;
+  const s=Math.min((xEnd-x0)/totW,(yEnd-y0)/totH,80);
+  const X=x=>x0+(x+Wf)*s, Y=z=>y0+z*s, xRt=B+Wb;
+  const backX=z=>g.Lp+g.bt+(g.bb-g.bt)*Math.min(z,hf)/hf;
+  const poly=(pts,fill,stroke='#9fb3d1',sw=.6)=>`<polygon points="${pts.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' ')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+  const halo='paint-order="stroke" stroke="#fff" stroke-width="3" stroke-linejoin="round"';
+  let o2='';
+  o2+=`<defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#154ea8"/></marker>
+    <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="${C_ACT}"/></marker>
+    <marker id="arP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="${C_PAS}"/></marker>
+    <marker id="arW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#0a7a5a"/></marker>
+    <marker id="ard" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#1b2a41"/></marker>
+    <pattern id="conc" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#d9e3f4"/><line x1="0" y1="0" x2="0" y2="7" stroke="#7d95bd" stroke-width="1.2"/></pattern>
+  </defs>`;
+  // aterro (camadas ativas)
+  boundaries(st.layersA,Htot).forEach(b=>{
+    const col=PAL[b.i%PAL.length];
+    const cuts=[b.z1,b.z2]; if(b.z1<hf-1e-9&&b.z2>hf+1e-9) cuts.splice(1,0,hf);
+    for(let k=0;k<cuts.length-1;k++){
+      const a=cuts[k],c=cuts[k+1];
+      if(c<=hf+1e-9) o2+=poly([[backX(a),a],[xRt,a],[xRt,c],[backX(c),c]],col);
+      else o2+=poly([[B,a],[xRt,a],[xRt,c],[B,c]],col);
+    }
+    const tz=(b.z2-b.z1)*s;
+    if(tz>16) o2+=`<text x="${X(B)+8}" y="${Y(b.z1)+(tz>30?15:12)}" font-size="11" fill="#40526b" ${halo}><tspan font-weight="700" fill="#1b2a41">A${b.i+1}</tspan> φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
+  });
+  // solo a frente (camadas passivas) + sobre a ponta
+  boundaries(st.layersP,Df).forEach(b=>{
+    const z1=Hexc+b.z1,z2=Hexc+b.z2,col=PAL[(b.i+3)%PAL.length];
+    const cuts=[z1,z2]; if(z1<zSap-1e-9&&z2>zSap+1e-9) cuts.splice(1,0,zSap);
+    for(let k=0;k<cuts.length-1;k++){
+      const a=cuts[k],c=cuts[k+1], xr=(c<=zSap+1e-9)?g.Lp:0;
+      o2+=poly([[-Wf,a],[xr,a],[xr,c],[-Wf,c]],col);
+    }
+    const tz=(z2-z1)*s;
+    if(tz>16) o2+=`<text x="${X(-Wf)+8}" y="${Y(z1)+(tz>30?15:12)}" font-size="11" fill="#40526b" ${halo}><tspan font-weight="700" fill="#1b2a41">P${b.i+1}</tspan> φ=${b.l.phi}° c=${b.l.c} γ=${b.l.g}</text>`;
+  });
+  // fundacao (abaixo da base)
+  const lf=layerAtDepth(st.layersP,Df);
+  o2+=poly([[-Wf,Htot],[xRt,Htot],[xRt,Htot+hFund],[-Wf,Htot+hFund]],PAL[(lf.i+3)%PAL.length]);
+  o2+=`<text x="${X(xRt)-6}" y="${Y(Htot+hFund)-6}" text-anchor="end" font-size="11" fill="#40526b" ${halo}>Fundação (${m.cap.soil}): φ=${fv(m.cap.phi)}° c=${fv(m.cap.c)} γ=${fv(m.cap.g)}</text>`;
+  // terreno
+  o2+=`<line x1="${X(backX(0))}" y1="${Y(0)}" x2="${X(xRt)}" y2="${Y(0)}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  o2+=`<line x1="${X(-Wf)}" y1="${Y(Hexc)}" x2="${X(Math.min(g.Lp,Hexc<=zSap+1e-9?g.Lp:0))}" y2="${Y(Hexc)}" stroke="#1b2a41" stroke-width="2.5"/>`;
+  // concreto
+  const cp=[[0,Htot],[B,Htot],[B,zSap],[g.Lp+g.bb,zSap],[g.Lp+g.bt,0],[g.Lp,0],[g.Lp,zSap],[0,zSap]];
+  o2+=poly(cp,'url(#conc)','#154ea8',1.6);
+  // sobrecarga
+  const sx1=X(backX(0))+10, sx2=X(xRt)-10, ysc=Y(0)-40;
+  if(q>0){
+    o2+=`<line x1="${sx1}" y1="${ysc}" x2="${sx2}" y2="${ysc}" stroke="#154ea8" stroke-width="2"/>`;
+    const n=Math.max(4,Math.floor((sx2-sx1)/45));
+    for(let k=0;k<=n;k++){const x=sx1+(sx2-sx1)*k/n; o2+=`<line x1="${x}" y1="${ysc}" x2="${x}" y2="${Y(0)-3}" stroke="#154ea8" stroke-width="1.6" marker-end="url(#ar)"/>`;}
+    o2+=`<text x="${(sx1+sx2)/2}" y="${ysc-8}" font-size="13" text-anchor="middle" fill="#154ea8" font-weight="700">q = ${f2(q)} kPa</text>`;
+  }
+  // pesos
+  m.items.filter(i=>i.kind!=='q').forEach(it=>{
+    const px=X(it.x), py=Y(Htot-it.y);
+    o2+=`<line x1="${px}" y1="${py-17}" x2="${px}" y2="${py-1}" stroke="#0a7a5a" stroke-width="1.8" marker-end="url(#arW)"/>
+         <circle cx="${px}" cy="${py}" r="2.6" fill="#0a7a5a"/>
+         <text x="${px+6}" y="${py-8}" font-size="11" font-weight="700" fill="#0a7a5a" ${halo}>${it.id}</text>`;
+  });
+  // diagrama ativo (a direita) + resultante Ea
+  const pm=Math.max(1e-6,...m.ptsA.map(p=>p.v)), sp=120/pm, xa=X(xRt)+16;
+  let pd=`M ${xa} ${Y(0)}`; m.ptsA.forEach(p=>{pd+=` L ${(xa+p.v*sp).toFixed(1)} ${Y(p.z).toFixed(1)}`;}); pd+=` L ${xa} ${Y(Htot)} Z`;
+  o2+=`<path d="${pd}" fill="${C_ACT}" fill-opacity=".22" stroke="${C_ACT}" stroke-width="1.6"/>
+        <line x1="${xa}" y1="${Y(0)}" x2="${xa}" y2="${Y(Htot)}" stroke="#1b2a41" stroke-width="1.4"/>`;
+  const pT=m.ptsA[0],pB=m.ptsA[m.ptsA.length-1];
+  o2+=`<text x="${xa+pT.v*sp+6}" y="${Y(0)+4}" font-size="11" font-weight="700" fill="${C_ACT}">Pa = ${fv(pT.v)} kPa</text>
+        <text x="${xa+pB.v*sp+6}" y="${Y(Htot)+4}" font-size="11" font-weight="700" fill="${C_ACT}">Pa = ${fv(pB.v)} kPa</text>`;
+  const zE=Htot-m.Ea.y;
+  o2+=`<line x1="${xa-2}" y1="${Y(zE)}" x2="${X(B)+3}" y2="${Y(zE)}" stroke="${C_ACT}" stroke-width="2.6" marker-end="url(#arA)"/>
+        <text x="${X(B)+12}" y="${Y(zE)-6}" font-size="12" font-weight="700" fill="${C_ACT}" ${halo}>Ea = ${fv(m.Ea.H)} kN/m</text>
+        <text x="${X(B)+12}" y="${Y(zE)+14}" font-size="11" fill="${C_ACT}" ${halo}>y = ${fv(m.Ea.y)} m da base${m.Ea.v>1e-9?` · Ea,v = ${fv(m.Ea.v)}`:''}</text>`;
+  if(o.usePassive&&m.Ep.E>1e-9){
+    const zP=Htot-m.Ep.y;
+    o2+=`<line x1="${X(-Wf)+6}" y1="${Y(zP)}" x2="${X(0)-3}" y2="${Y(zP)}" stroke="${C_PAS}" stroke-width="2.6" marker-end="url(#arP)"/>
+         <text x="${X(-Wf)+8}" y="${Y(zP)-6}" font-size="12" font-weight="700" fill="${C_PAS}" ${halo}>Ep = ${fv(m.Ep.E)} kN/m</text>`;
+  }
+  // tensoes na base
+  const yb=Y(Htot), hp=Math.min(hFund*s*0.75,46);
+  if(m.sp.length){
+    const [a,b]=m.sp, smax=Math.max(a.v,b.v,1e-9), sc=hp/smax;
+    o2+=`<polygon points="${X(a.z)},${yb} ${X(a.z)},${yb+a.v*sc} ${X(b.z)},${yb+b.v*sc} ${X(b.z)},${yb}" fill="${C_PAS}" fill-opacity=".25" stroke="${C_PAS}" stroke-width="1.5"/>`;
+    const n=Math.max(3,Math.round((b.z-a.z)*s/26));
+    for(let k=0;k<=n;k++){const x=a.z+(b.z-a.z)*k/n, v=a.v+(b.v-a.v)*k/n; if(v<smax*0.04) continue;
+      o2+=`<line x1="${X(x)}" y1="${yb+v*sc}" x2="${X(x)}" y2="${yb+2}" stroke="${C_PAS}" stroke-width="1.3" marker-end="url(#arP)"/>`;}
+    if(a.v>0.5) o2+=`<text x="${X(a.z)-5}" y="${yb+a.v*sc+4}" text-anchor="end" font-size="11" font-weight="700" fill="${C_PAS}" ${halo}>${fv(a.v)} kPa</text>`;
+    if(b.v>0.5) o2+=`<text x="${X(b.z)+5}" y="${yb+b.v*sc+4}" font-size="11" font-weight="700" fill="${C_PAS}" text-anchor="start" ${halo}>${fv(b.v)} kPa</text>`;
+    o2+=`<path d="M ${X(m.base.xR)-5} ${yb+hp+10} L ${X(m.base.xR)+5} ${yb+hp+10} L ${X(m.base.xR)} ${yb+hp+2} Z" fill="#d64545"/>
+         <text x="${X(m.base.xR)}" y="${yb+hp+36}" font-size="11" font-weight="700" fill="#d64545" text-anchor="middle" ${halo}>R · xR = ${fv(m.base.xR)} m · e = ${fv(m.base.e)} m</text>`;
+  }
+  // cotas
+  const dimV=(z1,z2,label,col,dx)=>`<line x1="${dx}" y1="${Y(z1)}" x2="${dx}" y2="${Y(z2)}" stroke="${col}" stroke-width="1.4" marker-start="url(#ard)" marker-end="url(#ard)"/>
+    <line x1="${dx-6}" y1="${Y(z1)}" x2="${dx+6}" y2="${Y(z1)}" stroke="${col}"/><line x1="${dx-6}" y1="${Y(z2)}" x2="${dx+6}" y2="${Y(z2)}" stroke="${col}"/>
+    <text x="${dx-8}" y="${(Y(z1)+Y(z2))/2}" font-size="11" font-weight="700" fill="${col}" text-anchor="middle" transform="rotate(-90 ${dx-8} ${(Y(z1)+Y(z2))/2})">${label}</text>`;
+  o2+=dimV(0,Hexc,`h = ${f2(Hexc)} m`,'#1b2a41',30);
+  o2+=dimV(Hexc,Htot,`Df = ${f2(Df)} m`,'#154ea8',30);
+  o2+=dimV(0,zSap,`hf = ${f2(hf)} m`,'#1b2a41',54);
+  if(hs>1e-9) o2+=dimV(zSap,Htot,`hs = ${f2(hs)}`,'#154ea8',54);
+  const yd=Y(Htot+hFund)+50;
+  const dimH=(x1,x2,label,yy)=>`<line x1="${X(x1)}" y1="${yy}" x2="${X(x2)}" y2="${yy}" stroke="#1b2a41" stroke-width="1.4" marker-start="url(#ard)" marker-end="url(#ard)"/>
+    <line x1="${X(x1)}" y1="${yy-5}" x2="${X(x1)}" y2="${yy+5}" stroke="#1b2a41"/><line x1="${X(x2)}" y1="${yy-5}" x2="${X(x2)}" y2="${yy+5}" stroke="#1b2a41"/>
+    <text x="${(X(x1)+X(x2))/2}" y="${yy-6}" font-size="11" font-weight="700" fill="#1b2a41" text-anchor="middle">${(X(x2)-X(x1))<64?label.replace(/^\w+ = /,''):label}</text>`;
+  if(g.Lp>1e-9) o2+=dimH(0,g.Lp,`Lp = ${f2(g.Lp)}`,yd);
+  o2+=dimH(g.Lp,g.Lp+g.bb,`bb = ${f2(g.bb)}`,yd);
+  if(g.Lt>1e-9) o2+=dimH(g.Lp+g.bb,B,`Lt = ${f2(g.Lt)}`,yd);
+  o2+=dimH(0,B,`B = ${f2(B)} m  ·  bt = ${f2(g.bt)} m`,yd+22);
+  // titulo e legenda
+  o2+=`<text x="20" y="28" font-size="15" font-weight="700" fill="#154ea8">Esquema do muro de contenção${hs>1e-9?'':' (gravidade)'}</text>
+       <text x="20" y="46" font-size="12" fill="#6b7c93">Método: ${inp.method==='rankine'?'Rankine':'Coulomb'} · valores por metro de muro · empuxo ativo no plano vertical em x = B${inp.fsP!==1?` · Pp reduzido por FS = ${f2(inp.fsP)}`:''}</text>
+       <text x="20" y="${yd+52}" font-size="11" fill="#6b7c93">W = pesos (concreto e solo) · seta laranja = empuxo ativo · azul = tensões do solo na base (resultante R)${o.usePassive?' · Ep = passivo frontal':' · passivo frontal não considerado'}</text>`;
+  $('svg').setAttribute('viewBox','0 0 880 610');
+  $('svg').innerHTML=o2;
+}
+
+function updateMuro(){
+  const inp=getInputs(), {g,o}=getMuro();
+  const m=calcMuro(inp,g,o);
+  window.lastMuro=m;
+  drawMuro(inp,m);
+  $('pane-emp').innerHTML=empHTML(m.emp,inp,'muro');
+  $('pane-estab').innerHTML=estabHTML(inp,m);
+  $('pane-esf').innerHTML=esfHTML(inp,m);
+  renderMuroCards(inp,m);
+  showTab(window.curTab||'emp');
+}
+
 function showTab(name){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);
@@ -934,6 +1325,7 @@ function showTab(name){
 }
 
 function update(){
+  if(st.mode==='muro'){ updateMuro(); return; }
   const inp=getInputs();
   const fic=solveFicha(inp,inp.fsP,inp.fichaF);
   window.lastFic=fic;
@@ -1060,6 +1452,7 @@ function draw(){
   o+=`<text x="20" y="28" font-size="15" font-weight="700" fill="#154ea8">Esquema da cortina em balanço (sem tirantes)</text>`;
   o+=`<text x="20" y="46" font-size="12" fill="#6b7c93">Método: ${mname} · Pa = γ·h·Ka − 2c√Ka · Pp = γ·h·Kp + 2c√Kp${ficOk&&fic.FSp!==1?` · Pp reduzido por FS = ${f2(fic.FSp)}`:''}</text>`;
   if(ficOk) o+=`<text x="${xr+12}" y="${y0-14}" font-size="10" fill="#6b7c93">pressões atuantes (kPa):</text>`;
+  $('svg').setAttribute('viewBox','0 0 880 560');
   $('svg').innerHTML=o;
 
   // summary
@@ -1090,6 +1483,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('click',e=>{
   const t=e.target;
+  if(t.dataset.md){ setMode(t.dataset.md); return; }
   if(t.dataset.add){
     const L=t.dataset.add==='A'?st.layersA:st.layersP;
     L.splice(L.length-1,0,{t:1,phi:30,c:0,g:18}); // keep last as bottom
@@ -1115,11 +1509,13 @@ document.addEventListener('click',e=>{
 
 // save / load
 function getState(){
-  return {versao:3,method:st.method,H:num('H',5),D:num('D',4),q:num('q',0),qP:num('qP',0),
+  st.lay[st.mode]={A:st.layersA,P:st.layersP};
+  const muro={}; MURO_IDS.forEach(k=>muro[k]=num(k,0)); MURO_CHK.forEach(k=>muro[k]=$(k).checked); muro.mCap=$('mCap').value;
+  return {versao:4,mode:st.mode,method:st.method,H:num('H',5),D:num('D',4),q:num('q',0),qP:num('qP',0),
     cutTension:$('cutTension').checked,paLinear:$('paLinear').checked,pp1zero:$('pp1zero').checked,
     fichaF:num('fichaF',1.2),fsP:num('fsP',1),
     deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
-    layersA:st.layersA,layersP:st.layersP};
+    layersA:st.lay.cortina.A,layersP:st.lay.cortina.P,lay:st.lay,muro};
 }
 $('btnSave').onclick=()=>{
   const blob=new Blob([JSON.stringify(getState(),null,2)],{type:'application/json'});
@@ -1132,7 +1528,17 @@ $('fileIn').onchange=ev=>{
   r.onload=()=>{
     try{
       const d=JSON.parse(r.result);
-      st.method=d.method||'rankine'; st.layersA=d.layersA; st.layersP=d.layersP;
+      st.method=d.method||'rankine';
+      st.lay.cortina=(d.lay&&d.lay.cortina)?d.lay.cortina:{A:d.layersA,P:d.layersP};
+      if(d.lay&&d.lay.muro) st.lay.muro=d.lay.muro;
+      st.mode=d.mode==='muro'?'muro':'cortina';
+      st.layersA=st.lay[st.mode].A; st.layersP=st.lay[st.mode].P;
+      if(d.muro){
+        MURO_IDS.forEach(k=>{ if(d.muro[k]!==undefined) $(k).value=d.muro[k]; });
+        MURO_CHK.forEach(k=>{ if(d.muro[k]!==undefined) $(k).checked=d.muro[k]; });
+        if(d.muro.mCap) $('mCap').value=d.muro.mCap;
+      }
+      window.curTab='emp'; applyMode();
       ['H','D','q','qP','deltaA','deltaP','beta','fichaF','fsP'].forEach(k=>{ if(d[k]!==undefined) $(k).value=d[k]; });
       if(d.cutTension!==undefined) $('cutTension').checked=d.cutTension;
       if(d.pp1zero!==undefined) $('pp1zero').checked=d.pp1zero;
@@ -1146,6 +1552,7 @@ $('fileIn').onchange=ev=>{
 };
 $('btnCalc').onclick=()=>$('results').scrollIntoView({behavior:'smooth'});
 
+applyMode();
 refresh();
 </script>
 </body>

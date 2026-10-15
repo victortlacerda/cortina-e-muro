@@ -139,13 +139,30 @@ Pontos a confirmar com o usuario:
     abaixo com Pa negativo continuam cortando no ponto exato de zero
 
 ---------------------------------------------------------------------
-ETAPA 5 - Muro de contencao (gravidade / flexao)  [ ]
+ETAPA 5 - Muro de contencao (gravidade / flexao)  [x]
 ---------------------------------------------------------------------
-[ ] Geometria do muro (base, topo, altura, sapata)
-[ ] Verificacao ao tombamento
-[ ] Verificacao ao deslizamento
-[ ] Tensoes na base / capacidade de carga
-[ ] Esforcos no fuste e na sapata
+[x] Seletor de modo no topo: Cortina | Muro (camadas separadas por modo)
+[x] Geometria: hf, bt, bb, hs, Lp (ponta), Lt (talao), Df, peso do concreto
+    (gravidade = hs = Lp = Lt = 0)
+[x] Empuxo ativo (Rankine/Coulomb) no plano virtual vertical em x = B
+    (solo sobre o talao + costas inclinadas entram como peso)
+[x] Tombamento (FS em torno da ponta), deslizamento (atrito base + adesao
+    + passivo opcional), tensoes na base (trapezio/triangulo, excentricidade,
+    terco central)
+[x] Capacidade de carga: Meyerhof ou Vesic, sapata corrida, B' = B - 2e,
+    fatores de inclinacao
+[x] Esforcos no fuste (V, M a partir do topo), na ponta e no talao,
+    valores de calculo x gama_f; graficos V e M do fuste
+[x] Esquema dinamico do muro (pesos W, empuxo, tensoes na base, cotas)
+[x] Salvar/carregar projeto (versao 4, compativel com anteriores)
+PREMISSAS A CONFERIR COM CALCULO MANUAL DO USUARIO:
+  - plano virtual em x = B; passivo frontal desprezado por padrao
+  - beta (terreno inclinado) so altera Ka; peso do aterro inclinado nao modelado
+  - Coulomb: Ea,v = Ea,H.tg(delta) soma ao peso
+  - sobrecarga sobre o talao so estabiliza se a opcao estiver marcada
+  - capacidade de carga sem fatores de profundidade
+  - solo de fundacao = camada passiva na profundidade Df
+  - FS padrao: tombamento 2,0; deslizamento 1,5; capacidade 3,0
 
 ---------------------------------------------------------------------
 ETAPA 6 - Nspt -> parametros do solo  [ ]
