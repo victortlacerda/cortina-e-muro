@@ -55,6 +55,7 @@ Exemplos prontos para abrir estão na pasta [`exemplos/`](exemplos).
 | `index.html` | O app inteiro: interface, motor de cálculo (`<script id="engine">`), gerador Word (`<script id="docxlib">`) |
 | `roadmap.txt` | Etapas do projeto, o que já foi feito e o que falta |
 | `CHANGELOG.md` | Histórico de versões |
+| `CLAUDE.md` | Convenções para o Claude ao continuar o projeto |
 | `tests/` | Testes do motor de cálculo e do gerador Word (Node.js) |
 | `exemplos/` | Projetos `.json` de exemplo e memórias `.docx` geradas |
 | `docs/img/` | Imagens usadas neste README |
