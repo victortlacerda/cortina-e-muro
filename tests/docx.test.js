@@ -1,0 +1,20 @@
+// Gera um .docx com a biblioteca embutida no index.html e confere a estrutura do zip/XML
+const fs=require('fs'),path=require('path');
+const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
+const lib=html.match(/<script id="docxlib">([\s\S]*?)<\/script>/)[1];
+const DOCX=new Function(lib.replace(/if\(typeof module[^\n]*/,'')+';return DOCX')();
+let fail=0; const ok=(n,c)=>{console.log((c?'OK  ':'FAIL')+' '+n); if(!c) fail++;};
+const d=new DOCX.Doc({header:'Teste'});
+d.h(1,'1. Teste'); d.p('Texto com $\\sigma_v = 18 \\cdot 3$ e **negrito**.');
+d.eq('K_a = \\tan^2\\left(45^\\circ - \\frac{\\phi}{2}\\right) = 0{,}333');
+d.table({head:['a','b'],rows:[['1','2']]});
+const z=Buffer.from(d.bytes());
+ok('assinatura zip',z.readUInt32LE(0)===0x04034b50);
+const eocd=z.lastIndexOf(Buffer.from([0x50,0x4b,5,6]));
+ok('fim do diretorio central',eocd>0);
+const n=z.readUInt16LE(eocd+10); ok('9 partes no pacote',n===9);
+const s=z.toString('latin1');
+['word/document.xml','word/styles.xml','[Content_Types].xml','word/_rels/document.xml.rels'].forEach(p=>ok('contem '+p,s.includes(p)));
+const om=DOCX.omml('\\frac{a}{b}+\\sqrt{x}^2');
+ok('fracao OMML',om.includes('<m:f>')); ok('raiz OMML',om.includes('<m:rad>'));
+console.log(fail?'FALHAS '+fail:'TODOS OK'); if(fail) process.exit(1);

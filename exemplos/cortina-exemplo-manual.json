@@ -1,0 +1,109 @@
+{
+  "versao": 4,
+  "mode": "cortina",
+  "method": "rankine",
+  "H": 3,
+  "D": 3,
+  "q": 10,
+  "qP": 0,
+  "cutTension": true,
+  "paLinear": true,
+  "pp1zero": true,
+  "fichaF": 1.2,
+  "fsP": 1,
+  "deltaA": 15,
+  "deltaP": 0,
+  "beta": 0,
+  "layersA": [
+    {
+      "t": 3,
+      "phi": 15,
+      "c": 10,
+      "g": 17
+    },
+    {
+      "t": 3,
+      "phi": 35,
+      "c": 0,
+      "g": 19
+    }
+  ],
+  "layersP": [
+    {
+      "t": 3,
+      "phi": 35,
+      "c": 0,
+      "g": 19
+    }
+  ],
+  "lay": {
+    "cortina": {
+      "A": [
+        {
+          "t": 3,
+          "phi": 15,
+          "c": 10,
+          "g": 17
+        },
+        {
+          "t": 3,
+          "phi": 35,
+          "c": 0,
+          "g": 19
+        }
+      ],
+      "P": [
+        {
+          "t": 3,
+          "phi": 35,
+          "c": 0,
+          "g": 19
+        }
+      ]
+    },
+    "muro": {
+      "A": [
+        {
+          "t": 1,
+          "phi": 30,
+          "c": 0,
+          "g": 18
+        }
+      ],
+      "P": [
+        {
+          "t": 1,
+          "phi": 28,
+          "c": 10,
+          "g": 18
+        }
+      ]
+    }
+  },
+  "muro": {
+    "mHf": 4,
+    "mBt": 0.3,
+    "mBb": 0.5,
+    "mHs": 0.5,
+    "mLp": 1,
+    "mLt": 2.8,
+    "mDf": 1,
+    "mGc": 25,
+    "mDb": 22,
+    "mCa": 0,
+    "mFSt": 2,
+    "mFSd": 1.5,
+    "mFSc": 3,
+    "mGf": 1.4,
+    "mUsePas": false,
+    "mSoilToe": true,
+    "mQStab": false,
+    "mCap": "meyerhof"
+  },
+  "info": {
+    "proj": "Exemplo cortina contínua (conferido à mão)",
+    "autor": "",
+    "local": "",
+    "obs": "Z = 2,42 m; ficha de projeto 2,91 m"
+  }
+}

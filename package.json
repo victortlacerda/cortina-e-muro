@@ -1,0 +1,10 @@
+{
+  "name": "cortina-e-muro",
+  "version": "0.6.0",
+  "description": "App de engenharia para empuxos, ficha de cortina em balanço e muros de contenção (HTML puro, sem instalação).",
+  "private": true,
+  "scripts": {
+    "test": "node tests/motor.test.js && node tests/docx.test.js"
+  },
+  "license": "UNLICENSED"
+}
