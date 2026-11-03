@@ -102,6 +102,22 @@
   .row2 input,.row2 textarea{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;width:100%;box-sizing:border-box}
   .dact{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:14px}
   .dact .note{margin-right:auto}
+
+  .chart{position:relative}
+  .chart svg.cs{cursor:crosshair;display:block}
+  .ctb{position:absolute;top:6px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
+  @media (hover:none){.ctb{opacity:1}}
+  .chart:hover .ctb{opacity:1}
+  .ctb button{font-size:12px;padding:3px 8px;background:#fff}
+  #dlgChart{width:min(1200px,95vw);height:min(860px,92vh);max-width:none;padding:14px 16px;display:none;flex-direction:column;box-sizing:border-box}
+  #dlgChart[open]{display:flex}
+  .chHead{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .chHead b{color:var(--blue-d);font-size:16px}
+  .chHead .sp{flex:1}
+  .chHead button{min-width:34px}
+  #chBody{flex:1;min-height:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;touch-action:none}
+  #chBody svg{width:100%;height:100%;display:block;cursor:crosshair;user-select:none}
+  .chHint{margin-top:6px}
 </style>
 </head>
 <body class="m-cortina">
@@ -756,6 +772,14 @@ function calcMuro(inp,g0,o){
 }
 </script>
 
+
+<dialog id="dlgChart">
+  <div class="chHead"><b id="chTitle">Gráfico</b><span id="chZoomInfo" class="note"></span><div class="sp"></div>
+    <button id="chIn" title="Aproximar">+</button><button id="chOut" title="Afastar">−</button><button id="chReset" title="Vista completa">Vista completa</button>
+    <button id="chPng" class="primary" title="Exportar a vista atual em PNG">Exportar PNG</button><button id="chClose" title="Fechar">✕</button></div>
+  <div id="chBody"></div>
+  <div class="note chHint">Passe o mouse para ler os valores · clique para fixar a leitura · arraste para selecionar uma área e ampliar · roda do mouse = zoom · Shift + arrastar = mover · duplo clique = vista completa</div>
+</dialog>
 <dialog id="dlgDocx">
   <h2>Exportar memória de cálculo (Word)</h2>
   <p class="note" style="margin:0 0 10px">Gera um .docx com dados, equações (editáveis no Word), substituições numéricas passo a passo, esquema e diagramas do modo atual.</p>
@@ -1190,47 +1214,69 @@ function niceTicks(lo,hi,n=4){
 const fnum=v=>String(+v.toFixed(2)).replace('.',',');
 const C_ACT='#d9622b', C_PAS='#1f6feb', C_LIN='#154ea8';
 
-/* o = {title,unit,zMax,H,zO,zC,series:[{pts:[{x,z}],fill,stroke}],marks:[{x,z,label,dx}]} */
-function chartSVG(o){
-  const W=400,Ht=420,ml=46,mr=16,mt=40,mb=34,pw=W-ml-mr,ph=Ht-mt-mb;
+/* o = {title,unit,u,zMax,H,zO,zC,series:[{pts:[{x,z}],fill,stroke,name,abs}],marks:[{x,z,label}]}
+   opt = {id,W,H,fs,z0,z1,x0,x1}  -> vista (zoom) opcional
+   Cada grafico fica registrado em CH[id] para o modo interativo (valores ao
+   passar o mouse, ampliar, zoom e exportar PNG). */
+const CH={}; let chSeq=0;
+function chartSVG(o,opt={}){
+  if(!opt.id&&++chSeq%40===0) Object.keys(CH).forEach(k=>{ if(k!=='big'&&!document.querySelector(`svg[data-cid="${k}"]`)) delete CH[k]; });
+  const id=opt.id||('ch'+chSeq);
+  const fs=opt.fs||1, W=opt.W||400, Ht=opt.H||420;
+  const ml=Math.round(46*fs),mr=16,mt=Math.round(40*fs),mb=Math.round(34*fs),pw=W-ml-mr,ph=Ht-mt-mb;
   let xmin=0,xmax=0;
   o.series.forEach(s=>s.pts.forEach(p=>{xmin=Math.min(xmin,p.x);xmax=Math.max(xmax,p.x);}));
   const padx=(xmax-xmin)*0.08||1; xmin-=xmin<0?padx:0; xmax+=xmax>0?padx:0;
-  const nt=niceTicks(xmin,xmax,4), X=v=>ml+(v-nt.lo)/(nt.hi-nt.lo)*pw, Y=z=>mt+z/o.zMax*ph;
-  let s=`<svg viewBox="0 0 ${W} ${Ht}" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,system-ui,Arial,sans-serif">`;
-  s+=`<text x="${ml}" y="18" font-size="13" font-weight="700" fill="#154ea8">${o.title}</text>`;
-  s+=`<text x="${ml}" y="33" font-size="11" fill="#6b7c93">${o.unit}</text>`;
-  nt.ticks.forEach(v=>{
+  const ntFull=niceTicks(xmin,xmax,4);
+  const zoomed=opt.x0!==undefined;
+  const x0=zoomed?opt.x0:ntFull.lo, x1=zoomed?opt.x1:ntFull.hi;
+  const z0=opt.z0!==undefined?opt.z0:0, z1=opt.z1!==undefined?opt.z1:o.zMax;
+  const nt=zoomed?niceTicks(x0,x1,Math.max(4,Math.round(pw/110))):(W>500?niceTicks(x0,x1,Math.max(4,Math.round(pw/110))):ntFull);
+  const X=v=>ml+(v-x0)/(x1-x0)*pw, Y=z=>mt+(z-z0)/(z1-z0)*ph;
+  CH[id]={o,geo:{ml,mt,pw,ph,W,Ht,x0,x1,z0,z1,full:{x0:ntFull.lo,x1:ntFull.hi,z0:0,z1:o.zMax}}};
+  const F=v=>Math.round(v*fs*10)/10;
+  let s=`<svg viewBox="0 0 ${W} ${Ht}" xmlns="http://www.w3.org/2000/svg" class="cs" data-cid="${id}" font-family="Segoe UI,system-ui,Arial,sans-serif">`;
+  s+=`<defs><clipPath id="clip-${id}"><rect x="${ml}" y="${mt}" width="${pw}" height="${ph}"/></clipPath></defs>`;
+  s+=`<rect x="0" y="0" width="${W}" height="${Ht}" fill="#fff"/>`;
+  s+=`<text x="${ml}" y="${F(18)}" font-size="${F(13)}" font-weight="700" fill="#154ea8">${o.title}</text>`;
+  s+=`<text x="${ml}" y="${F(33)}" font-size="${F(11)}" fill="#6b7c93">${o.unit}</text>`;
+  nt.ticks.filter(v=>v>=x0-1e-9&&v<=x1+1e-9).forEach(v=>{
     s+=`<line x1="${X(v)}" y1="${mt}" x2="${X(v)}" y2="${mt+ph}" stroke="#e3ebf6"/>`;
-    s+=`<text x="${X(v)}" y="${mt+ph+14}" font-size="10" fill="#6b7c93" text-anchor="middle">${fnum(v)}</text>`;
+    s+=`<text x="${X(v)}" y="${mt+ph+F(14)}" font-size="${F(10)}" fill="#6b7c93" text-anchor="middle">${fnum(v)}</text>`;
   });
-  const zt=niceTicks(0,o.zMax,6);
-  zt.ticks.filter(v=>v>=0&&v<=o.zMax+1e-9).forEach(v=>{
+  const zt=niceTicks(z0,z1,Math.max(6,Math.round(ph/60)));
+  zt.ticks.filter(v=>v>=z0-1e-9&&v<=z1+1e-9).forEach(v=>{
     s+=`<line x1="${ml}" y1="${Y(v)}" x2="${ml+pw}" y2="${Y(v)}" stroke="#eef3fa"/>`;
-    s+=`<text x="${ml-5}" y="${Y(v)+3}" font-size="10" fill="#6b7c93" text-anchor="end">${fnum(v)}</text>`;
+    s+=`<text x="${ml-5}" y="${Y(v)+3}" font-size="${F(10)}" fill="#6b7c93" text-anchor="end">${fnum(v)}</text>`;
   });
-  s+=`<text x="12" y="${mt+ph/2}" font-size="10" fill="#6b7c93" transform="rotate(-90 12 ${mt+ph/2})" text-anchor="middle">z (m)</text>`;
+  s+=`<text x="12" y="${mt+ph/2}" font-size="${F(10)}" fill="#6b7c93" transform="rotate(-90 12 ${mt+ph/2})" text-anchor="middle">z (m)</text>`;
+  s+=`<g clip-path="url(#clip-${id})">`;
   o.series.forEach(se=>{
     if(se.pts.length<2) return;
     const pts=se.pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.z).toFixed(1)}`);
     const first=se.pts[0],last=se.pts[se.pts.length-1];
     s+=`<polygon points="${pts.join(' ')} ${X(0).toFixed(1)},${Y(last.z).toFixed(1)} ${X(0).toFixed(1)},${Y(first.z).toFixed(1)}" fill="${se.fill}" fill-opacity=".55" stroke="none"/>`;
-    s+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${se.stroke}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    s+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${se.stroke}" stroke-width="${F(1.8)}" stroke-linejoin="round"/>`;
   });
-  s+=`<line x1="${X(0)}" y1="${mt}" x2="${X(0)}" y2="${mt+ph}" stroke="#1b2a41" stroke-width="1.6"/>`;
-  const hl=(z,label,col)=>{ if(z<0||z>o.zMax+1e-9) return '';
+  if(x0<=0&&x1>=0) s+=`<line x1="${X(0)}" y1="${mt}" x2="${X(0)}" y2="${mt+ph}" stroke="#1b2a41" stroke-width="1.6"/>`;
+  const hl=(z,label,col)=>{ if(z<z0-1e-9||z>z1+1e-9) return '';
     return `<line x1="${ml}" y1="${Y(z)}" x2="${ml+pw}" y2="${Y(z)}" stroke="${col}" stroke-dasharray="5 4"/>
-    <text x="${o.cLabel?ml+6:ml+pw-2}" y="${Y(z)-3}" font-size="10" fill="${col}" text-anchor="${o.cLabel?'start':'end'}" font-weight="600">${label}</text>`; };
+    <text x="${o.cLabel?ml+6:ml+pw-2}" y="${Y(z)-3}" font-size="${F(10)}" fill="${col}" text-anchor="${o.cLabel?'start':'end'}" font-weight="600">${label}</text>`; };
   if(o.H!==undefined&&o.H!==null) s+=hl(o.H,o.hLabel||'escavação (z = h)','#6b7c93');
   if(o.zO!==undefined) s+=hl(o.zO,'O','#d9622b');
   if(o.zC!==undefined) s+=hl(o.zC,o.cLabel||'C','#154ea8');
   (o.marks||[]).forEach(m=>{
-    s+=`<circle cx="${X(m.x)}" cy="${Y(m.z)}" r="4" fill="#fff" stroke="#d64545" stroke-width="2"/>`;
+    s+=`<circle cx="${X(m.x)}" cy="${Y(m.z)}" r="${F(4)}" fill="#fff" stroke="#d64545" stroke-width="2"/>`;
     const right=X(m.x)<ml+pw*0.6;
-    s+=`<text x="${X(m.x)+(right?8:-8)}" y="${Y(m.z)+4}" font-size="11" font-weight="700" fill="#d64545" text-anchor="${right?'start':'end'}">${m.label}</text>`;
+    s+=`<text x="${X(m.x)+(right?8:-8)}" y="${Y(m.z)+4}" font-size="${F(11)}" font-weight="700" fill="#d64545" text-anchor="${right?'start':'end'}">${m.label}</text>`;
   });
-  return s+'</svg>';
+  s+='</g><g class="hov" pointer-events="none"></g>';
+  s+=`<rect class="hit" x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="transparent"/>`;
+  s+='</svg>';
+  if(opt.bare) return s;
+  return `<div class="ctb"><button data-cbig="${id}" title="Ampliar e dar zoom">⤢ Ampliar</button><button data-cpng="${id}" title="Exportar este gráfico em PNG">PNG</button></div>`+s;
 }
+
 
 function renderDiagPane(inp,fic){
   if(!fic.ok) return `<div class="warn">${fic.warn.join('<br>')||'Sem resultado.'}</div>`;
@@ -1242,15 +1288,15 @@ function renderDiagPane(inp,fic){
   const N=pf.netPts.map(p=>({x:p.v,z:p.z}));
   const Vs=pf.S.map(p=>({x:p.V,z:p.z})), Ms=pf.S.map(p=>({x:p.M,z:p.z}));
   const base={zMax:zC,H,zO,zC};
-  const c1=chartSVG({...base,title:'Empuxos',unit:'kPa  ·  ativo → direita, passivo ← esquerda',
-    series:[{pts:A,fill:'#f6c6a8',stroke:C_ACT},{pts:P,fill:'#b9d3fb',stroke:C_PAS}]});
-  const c2=chartSVG({...base,title:'Empuxo líquido',unit:'kPa  ·  + ativo (empurra p/ a escavação)  − passivo',
-    series:[{pts:N,fill:'#cfe0fb',stroke:C_LIN}]});
-  const c3=chartSVG({...base,title:'Esforço cortante V',unit:'kN/m',
-    series:[{pts:Vs,fill:'#cfe0fb',stroke:C_LIN}],
+  const c1=chartSVG({...base,title:'Empuxos',u:'kPa',unit:'kPa  ·  ativo → direita, passivo ← esquerda',
+    series:[{pts:A,fill:'#f6c6a8',stroke:C_ACT,name:'Ativo Pa'},{pts:P,fill:'#b9d3fb',stroke:C_PAS,name:'Passivo Pp',abs:true}]});
+  const c2=chartSVG({...base,title:'Empuxo líquido',u:'kPa',unit:'kPa  ·  + ativo (empurra p/ a escavação)  − passivo',
+    series:[{pts:N,fill:'#cfe0fb',stroke:C_LIN,name:'Líquido'}]});
+  const c3=chartSVG({...base,title:'Esforço cortante V',u:'kN/m',unit:'kN/m',
+    series:[{pts:Vs,fill:'#cfe0fb',stroke:C_LIN,name:'V'}],
     marks:[{x:pf.Vmax,z:pf.zVmax,label:`Vmax = ${fv(pf.Vmax)}`}]});
-  const c4=chartSVG({...base,title:'Momento fletor M',unit:'kN·m/m',
-    series:[{pts:Ms,fill:'#cfe0fb',stroke:C_LIN}],
+  const c4=chartSVG({...base,title:'Momento fletor M',u:'kN·m/m',unit:'kN·m/m',
+    series:[{pts:Ms,fill:'#cfe0fb',stroke:C_LIN,name:'M'}],
     marks:[{x:pf.Mmax,z:pf.zMmax,label:`Mmax = ${fv(pf.Mmax)}`}]});
   return `<div class="charts">${[c1,c2,c3,c4].map(c=>`<div class="chart">${c}</div>`).join('')}</div>
   <div class="note" style="margin-top:10px">Diagramas até a ponta teórica C (z = h + Z = ${fv(zC)} m). Valores por metro de cortina.
@@ -1457,10 +1503,10 @@ function esfHTML(inp,m){
   const S=stem.S;
   const V=S.map(p=>({x:p.V,z:p.z})), M=S.map(p=>({x:p.M,z:p.z}));
   const base={zMax:g.hf,zC:g.hf,cLabel:'base do fuste'};
-  const c1=chartSVG({...base,title:'Fuste · cortante V',unit:'kN/m  ·  z a partir do topo do aterro',
-    series:[{pts:V,fill:'#cfe0fb',stroke:C_LIN}],marks:[{x:stem.V,z:g.hf,label:`V = ${fv(stem.V)}`}]});
-  const c2=chartSVG({...base,title:'Fuste · momento fletor M',unit:'kN·m/m  ·  tração no lado do aterro',
-    series:[{pts:M,fill:'#cfe0fb',stroke:C_LIN}],marks:[{x:stem.M,z:g.hf,label:`M = ${fv(stem.M)}`}]});
+  const c1=chartSVG({...base,title:'Fuste · cortante V',u:'kN/m',unit:'kN/m  ·  z a partir do topo do aterro',
+    series:[{pts:V,fill:'#cfe0fb',stroke:C_LIN,name:'V'}],marks:[{x:stem.V,z:g.hf,label:`V = ${fv(stem.V)}`}]});
+  const c2=chartSVG({...base,title:'Fuste · momento fletor M',u:'kN·m/m',unit:'kN·m/m  ·  tração no lado do aterro',
+    series:[{pts:M,fill:'#cfe0fb',stroke:C_LIN,name:'M'}],marks:[{x:stem.M,z:g.hf,label:`M = ${fv(stem.M)}`}]});
   h+=`<div class="charts" style="margin-top:12px">${[c1,c2].map(c=>`<div class="chart">${c}</div>`).join('')}</div>`;
   const row=(n,x,V,M,Vd,Md,t)=>`<tr><td class="l">${n}</td><td>${fv(x)}</td><td>${fv(V)}</td><td>${fv(M)}</td><td class="hi">${fv(Vd)}</td><td class="hi">${fv(Md)}</td><td class="l">${t}</td></tr>`;
   h+=`<h3>Seções críticas (por metro de muro)</h3><div class="tw"><table><thead><tr><th class="l">Seção</th><th>x (m)</th><th>V (kN/m)</th><th>M (kN·m/m)</th><th>Vd (kN/m)</th><th>Md (kN·m/m)</th><th class="l">Tração</th></tr></thead><tbody>
@@ -1881,6 +1927,7 @@ async function svgToPng(svg,scale=2.5){
   c.setAttribute('xmlns','http://www.w3.org/2000/svg');
   c.setAttribute('width',w); c.setAttribute('height',h);
   if(!c.getAttribute('font-family')) c.setAttribute('font-family','Segoe UI,system-ui,Arial,sans-serif');
+  c.querySelectorAll('.hov,.hit').forEach(n=>n.remove());
   const xml=new XMLSerializer().serializeToString(c);
   const url=URL.createObjectURL(new Blob([xml],{type:'image/svg+xml;charset=utf-8'}));
   const img=new Image();
@@ -2157,6 +2204,150 @@ $('rpGo').onclick=async()=>{
   }catch(err){ console.error(err); $('rpMsg').textContent='Erro ao gerar o documento: '+err.message; }
   b.disabled=false;
 };
+
+/* ---------- interacao: valores no ponto, ampliar, zoom, PNG ---------- */
+// valores de uma serie na profundidade z (pode haver salto: acima/abaixo)
+function serieAt(pts,z){
+  const hits=[];
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    if((z>=a.z&&z<=b.z)||(z>=b.z&&z<=a.z)){
+      if(Math.abs(b.z-a.z)<1e-12) hits.push(a.x,b.x);
+      else hits.push(a.x+(b.x-a.x)*(z-a.z)/(b.z-a.z));
+    }
+  }
+  if(!hits.length) return null;
+  return {above:hits[0],below:hits[hits.length-1]};
+}
+function svgPt(svg,ev){
+  const p=svg.createSVGPoint(); p.x=ev.clientX; p.y=ev.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+const chEsc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function chHover(svg,pt){
+  const c=CH[svg.dataset.cid]; if(!c) return;
+  const {ml,mt,pw,ph,x0,x1,z0,z1}=c.geo, g=svg.querySelector('.hov');
+  if(!pt||pt.x<ml||pt.x>ml+pw||pt.y<mt||pt.y>mt+ph){ if(!svg.dataset.pin) g.innerHTML=''; return; }
+  const fs=c.geo.W>500?1.2:1;
+  const z=z0+(pt.y-mt)/ph*(z1-z0);
+  const X=v=>ml+(v-x0)/(x1-x0)*pw;
+  let h=`<line x1="${ml}" y1="${pt.y}" x2="${ml+pw}" y2="${pt.y}" stroke="#1b2a41" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>`;
+  const lines=[`z = ${f2(z)} m`];
+  const u=c.o.u||'';
+  c.o.series.forEach((se,i)=>{
+    const v=serieAt(se.pts,z); if(!v) return;
+    const tr=x=>se.abs?Math.abs(x):x;
+    [v.above,v.below].forEach((x,k)=>{ if(k===1&&Math.abs(v.below-v.above)<1e-9) return;
+      const cx=Math.max(ml,Math.min(ml+pw,X(x)));
+      h+=`<circle cx="${cx}" cy="${pt.y}" r="${4*fs}" fill="#fff" stroke="${se.stroke}" stroke-width="2"/>`; });
+    const nm=se.name||c.o.title;
+    lines.push(Math.abs(v.below-v.above)<1e-9?`${nm}: ${f2(tr(v.above))} ${u}`:`${nm}: ${f2(tr(v.above))} / ${f2(tr(v.below))} ${u}`);
+  });
+  if(svg.dataset.pin) lines.push('(fixado · clique para soltar)');
+  const lh=15*fs, bw=Math.max(...lines.map(l=>l.length))*6.3*fs+16, bh=lines.length*lh+10;
+  let bx=pt.x+12, by=pt.y+10;
+  if(bx+bw>ml+pw) bx=pt.x-12-bw;
+  if(by+bh>mt+ph) by=pt.y-10-bh;
+  h+=`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="6" fill="#fff" stroke="#154ea8" stroke-width="1" opacity=".96"/>`;
+  lines.forEach((l,i)=>{ h+=`<text x="${bx+8}" y="${by+lh*(i+1)}" font-size="${11*fs}" fill="${i===0?'#154ea8':'#1b2a41'}" font-weight="${i===0?700:500}">${chEsc(l)}</text>`; });
+  g.innerHTML=h;
+}
+document.addEventListener('pointermove',e=>{
+  const svg=e.target.closest&&e.target.closest('svg.cs');
+  document.querySelectorAll('svg.cs').forEach(s=>{ if(s!==svg&&!s.dataset.pin){ const g=s.querySelector('.hov'); if(g&&g.innerHTML) g.innerHTML=''; } });
+  if(!svg||svg.dataset.pin) return;
+  if(svg.dataset.cid==='big'&&BIG.drag) return;
+  chHover(svg,svgPt(svg,e));
+});
+
+/* exportar PNG */
+async function chartPng(id,fname){
+  const svg=document.querySelector(`svg[data-cid="${id}"]`); if(!svg) return;
+  const img=await svgToPng(svg,id==='big'?2:3);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([img.bytes],{type:'image/png'}));
+  const t=(CH[id].o.title||'grafico').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'').toLowerCase();
+  a.download=(fname||t)+'.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+/* janela ampliada com zoom */
+const BIG={id:null,view:null,drag:null};
+function bigRender(){
+  const c=CH[BIG.id]; if(!c) return;
+  const box=$('chBody'), W=Math.max(520,Math.round(box.clientWidth||900)), H=Math.max(380,Math.round(box.clientHeight||560));
+  box.innerHTML=chartSVG(c.o,{id:'big',bare:true,W,H,fs:1.25,...BIG.view});
+  $('chTitle').textContent=c.o.title;
+  const g=CH.big.geo, f=g.full, zoomed=Math.abs(g.z1-g.z0-(f.z1-f.z0))>1e-6||Math.abs(g.x1-g.x0-(f.x1-f.x0))>1e-6;
+  $('chZoomInfo').textContent=zoomed?`z: ${f2(g.z0)} a ${f2(g.z1)} m · valores: ${f2(g.x0)} a ${f2(g.x1)}`:'vista completa';
+}
+function bigOpen(id){
+  BIG.id=id; BIG.view=null; $('dlgChart').showModal();
+  requestAnimationFrame(bigRender);
+}
+function bigZoom(f,cx,cy){ // f<1 aproxima; cx,cy em fracao (0..1) da area do grafico
+  const g=CH.big.geo; cx=cx===undefined?.5:cx; cy=cy===undefined?.5:cy;
+  const xc=g.x0+cx*(g.x1-g.x0), zc=g.z0+cy*(g.z1-g.z0);
+  BIG.view={x0:xc-(xc-g.x0)*f,x1:xc+(g.x1-xc)*f,z0:zc-(zc-g.z0)*f,z1:zc+(g.z1-zc)*f};
+  bigRender();
+}
+const bigFrac=(svg,e)=>{ const g=CH.big.geo,p=svgPt(svg,e); return {fx:(p.x-g.ml)/g.pw,fy:(p.y-g.mt)/g.ph,p}; };
+$('chBody').addEventListener('wheel',e=>{
+  const svg=e.target.closest('svg.cs'); if(!svg) return;
+  e.preventDefault();
+  const {fx,fy}=bigFrac(svg,e);
+  bigZoom(e.deltaY<0?0.8:1.25,Math.max(0,Math.min(1,fx)),Math.max(0,Math.min(1,fy)));
+},{passive:false});
+$('chBody').addEventListener('pointerdown',e=>{
+  const svg=e.target.closest('svg.cs'); if(!svg||e.button!==0) return;
+  const {fx,fy,p}=bigFrac(svg,e);
+  if(fx<0||fx>1||fy<0||fy>1) return;
+  BIG.drag={fx,fy,p,pan:e.shiftKey,view:{...CH.big.geo},moved:false};
+  svg.setPointerCapture(e.pointerId);
+});
+$('chBody').addEventListener('pointermove',e=>{
+  if(!BIG.drag) return;
+  const svg=$('chBody').querySelector('svg.cs'); const g=CH.big.geo, d=BIG.drag;
+  const {fx,fy,p}=bigFrac(svg,e);
+  if(Math.hypot(p.x-d.p.x,p.y-d.p.y)>5) d.moved=true;
+  if(!d.moved) return;
+  if(d.pan){
+    const v=d.view, dx=(fx-d.fx)*(v.x1-v.x0), dz=(fy-d.fy)*(v.z1-v.z0);
+    BIG.view={x0:v.x0-dx,x1:v.x1-dx,z0:v.z0-dz,z1:v.z1-dz}; bigRender();
+    BIG.drag.fx=fx; BIG.drag.fy=fy; BIG.drag.view={...CH.big.geo};
+  }else{
+    const x=Math.min(p.x,d.p.x),y=Math.min(p.y,d.p.y),w=Math.abs(p.x-d.p.x),h=Math.abs(p.y-d.p.y);
+    svg.querySelector('.hov').innerHTML=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#1f6feb" fill-opacity=".12" stroke="#1f6feb" stroke-dasharray="4 3"/>`;
+  }
+});
+$('chBody').addEventListener('pointerup',e=>{
+  const d=BIG.drag; BIG.drag=null; if(!d) return;
+  const svg=$('chBody').querySelector('svg.cs');
+  if(!d.moved){ // clique: fixa/solta a leitura
+    if(svg.dataset.pin){ delete svg.dataset.pin; chHover(svg,svgPt(svg,e)); }
+    else { svg.dataset.pin=''; chHover(svg,svgPt(svg,e)); svg.dataset.pin='1'; chHover(svg,svgPt(svg,e)); }
+    return;
+  }
+  if(d.pan) return;
+  const g=CH.big.geo; const {fx,fy}=bigFrac(svg,e);
+  const a=Math.max(0,Math.min(1,Math.min(fx,d.fx))),b=Math.max(0,Math.min(1,Math.max(fx,d.fx)));
+  const c=Math.max(0,Math.min(1,Math.min(fy,d.fy))),dd=Math.max(0,Math.min(1,Math.max(fy,d.fy)));
+  if(b-a<0.01||dd-c<0.01){ svg.querySelector('.hov').innerHTML=''; return; }
+  BIG.view={x0:g.x0+a*(g.x1-g.x0),x1:g.x0+b*(g.x1-g.x0),z0:g.z0+c*(g.z1-g.z0),z1:g.z0+dd*(g.z1-g.z0)};
+  bigRender();
+});
+$('chBody').addEventListener('dblclick',()=>{ BIG.view=null; bigRender(); });
+$('chIn').onclick=()=>bigZoom(0.67);
+$('chOut').onclick=()=>bigZoom(1.5);
+$('chReset').onclick=()=>{ BIG.view=null; bigRender(); };
+$('chPng').onclick=()=>chartPng('big');
+$('chClose').onclick=()=>$('dlgChart').close();
+window.addEventListener('resize',()=>{ if($('dlgChart').open) bigRender(); });
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-cbig],[data-cpng]');
+  if(b){ if(b.dataset.cbig) bigOpen(b.dataset.cbig); else chartPng(b.dataset.cpng); return; }
+  const svg=e.target.closest&&e.target.closest('svg.cs');
+  if(svg&&svg.dataset.cid!=='big') bigOpen(svg.dataset.cid);   // clique no grafico pequeno abre ampliado
+});
 
 applyMode();
 refresh();

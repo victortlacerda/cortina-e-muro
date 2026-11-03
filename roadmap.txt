@@ -75,6 +75,15 @@ ETAPA 3 - Graficos de empuxo, cortante e momento  [x]
     Obs.: Vmax = maior |V| ate a secao de Mmax. O V residual na ponta C
     e mostrado a parte (a reacao residual e coberta pelo +20% da ficha)
     Obs.: valores por metro linear de cortina (kN/m e kN.m/m)
+[x] Graficos interativos (todos os diagramas, cortina e muro):
+    - passar o mouse mostra z e os valores de cada curva naquele ponto
+      (nos saltos mostra valor acima / abaixo)
+    - "Ampliar" (ou clique no grafico) abre em tela grande
+    - zoom: roda do mouse, arrastar para selecionar area, botoes + / -,
+      Shift+arrastar move, duplo clique volta a vista completa
+    - clique fixa a leitura no ponto
+    - exportar cada grafico em PNG (alta resolucao), inclusive a vista
+      com zoom
 
 ---------------------------------------------------------------------
 ETAPA 4 - Dimensionamento da ficha (cortina/estaca em balanco) [x]
