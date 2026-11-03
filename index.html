@@ -94,6 +94,14 @@
   table.kt td.l{white-space:normal}
   table.kt td.u{color:var(--muted);width:1%}
   tr.tot td{border-top:2px solid var(--blue-m)}
+
+  dialog{border:1px solid var(--line);border-radius:14px;padding:20px 22px;width:min(520px,92vw);color:var(--text);box-shadow:0 20px 60px rgba(21,78,168,.25)}
+  dialog::backdrop{background:rgba(21,50,100,.35)}
+  dialog h2{margin:0 0 6px;color:var(--blue-d);font-size:17px}
+  .row2{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin:7px 0}
+  .row2 input,.row2 textarea{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;width:100%;box-sizing:border-box}
+  .dact{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:14px}
+  .dact .note{margin-right:auto}
 </style>
 </head>
 <body class="m-cortina">
@@ -104,6 +112,7 @@
   <div class="sp"></div>
   <button id="btnSave">Salvar projeto</button>
   <button id="btnLoad">Abrir projeto</button>
+  <button id="btnDocx" title="Gerar memória de cálculo em Word (.docx)">Exportar Word</button>
   <input id="fileIn" type="file" accept=".json" hidden>
   <button class="primary" id="btnCalc" title="Ir para os resultados">Ver resultados</button>
 </header>
@@ -745,6 +754,309 @@ function calcMuro(inp,g0,o){
     Ea:{H:EaH,y:yA,Mov:MovA,v:Eav,delta:dA},Ep:{E:Ep,y:yP,M:Mp,used:!!o.usePassive,fs:fsP},
     tomb,desl,base,sp,cap,stem,toe,heel,o,okAll};
 }
+</script>
+
+<dialog id="dlgDocx">
+  <h2>Exportar memória de cálculo (Word)</h2>
+  <p class="note" style="margin:0 0 10px">Gera um .docx com dados, equações (editáveis no Word), substituições numéricas passo a passo, esquema e diagramas do modo atual.</p>
+  <div class="row2"><label>Projeto</label><input id="rpProj" type="text" placeholder="Ex.: Contenção da rua X"></div>
+  <div class="row2"><label>Responsável</label><input id="rpAutor" type="text" placeholder="Nome / CREA"></div>
+  <div class="row2"><label>Local / obra</label><input id="rpLocal" type="text"></div>
+  <div class="row2"><label>Observações</label><textarea id="rpObs" rows="2"></textarea></div>
+  <div class="dact"><span id="rpMsg" class="note"></span><button id="rpCancel">Cancelar</button><button class="primary" id="rpGo">Gerar .docx</button></div>
+</dialog>
+<script id="docxlib">
+/* =====================================================================
+   DOCX - gerador de .docx sem dependencias (zip + OOXML + equacoes OMML)
+   Equacoes escritas em LaTeX (subconjunto) viram equacoes NATIVAS do Word.
+   Uso:  const d=new DOCX.Doc({header:'...'}); d.h(1,'Titulo'); d.eq('a=b^2');
+         const bytes=d.bytes();   // Uint8Array do arquivo .docx
+   ===================================================================== */
+const DOCX=(function(){
+const enc=new TextEncoder();
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+/* ---------------- ZIP (sem compressao) ---------------- */
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function zip(files){
+  const parts=[],central=[];let off=0;
+  const u16=v=>[v&255,(v>>8)&255], u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  files.forEach(f=>{
+    const name=enc.encode(f.name), data=f.data, crc=crc32(data);
+    const lh=new Uint8Array([0x50,0x4b,3,4,...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0)]);
+    parts.push(lh,name,data);
+    central.push(new Uint8Array([0x50,0x4b,1,2,...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),name);
+    off+=lh.length+name.length+data.length;
+  });
+  let cs=0;central.forEach(c=>cs+=c.length);
+  const end=new Uint8Array([0x50,0x4b,5,6,...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cs),...u32(off),...u16(0)]);
+  const all=[...parts,...central,end];let n=0;all.forEach(a=>n+=a.length);
+  const out=new Uint8Array(n);let p=0;all.forEach(a=>{out.set(a,p);p+=a.length;});return out;
+}
+
+/* ---------------- LaTeX -> OMML ---------------- */
+const SYM={alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',varepsilon:'ε',theta:'θ',lambda:'λ',mu:'μ',pi:'π',rho:'ρ',sigma:'σ',tau:'τ',phi:'φ',varphi:'φ',omega:'ω',psi:'ψ',eta:'η',kappa:'κ',nu:'ν',xi:'ξ',zeta:'ζ',
+  Delta:'Δ',Sigma:'Σ',Omega:'Ω',Phi:'Φ',Gamma:'Γ',Theta:'Θ',Lambda:'Λ',Pi:'Π',
+  cdot:'⋅',times:'×',pm:'±',mp:'∓',div:'÷',geq:'≥',ge:'≥',leq:'≤',le:'≤',approx:'≈',neq:'≠',ne:'≠',equiv:'≡',
+  rightarrow:'→',to:'→',leftarrow:'←',Rightarrow:'⇒',Leftrightarrow:'⇔',circ:'∘',degree:'°',infty:'∞',ldots:'…',dots:'…',
+  sum:'∑',int:'∫',partial:'∂',prime:'′',angle:'∠',therefore:'∴',
+  quad:' ',qquad:'  ',',':' ',';':' ',' ':' ','!':''};
+const FUNCS=['tan','sin','cos','cot','arctan','arcsin','arccos','ln','log','min','max','exp'];
+
+function tokenize(s){
+  const T=[];let i=0;
+  while(i<s.length){
+    const c=s[i];
+    if(c==='\\'){
+      let j=i+1;
+      if(/[A-Za-z]/.test(s[j]||'')){while(j<s.length&&/[A-Za-z]/.test(s[j]))j++;}else j++;
+      const cmd=s.slice(i+1,j);
+      if((cmd==='text'||cmd==='mathrm'||cmd==='mathbf')&&s[j]==='{'){
+        let d=1,k=j+1;while(k<s.length&&d>0){if(s[k]==='{')d++;else if(s[k]==='}')d--;k++;}
+        T.push({k:'text',v:s.slice(j+1,k-1),sty:cmd});i=k;continue;
+      }
+      T.push({k:'cmd',v:cmd});i=j;continue;
+    }
+    if(c==='{'||c==='}'||c==='^'||c==='_'){T.push({k:c});i++;continue;}
+    if(/\s/.test(c)){i++;continue;}
+    const m=/^\d+(?:[.,]\d+)?/.exec(s.slice(i));
+    if(m){T.push({k:'num',v:m[0]});i+=m[0].length;continue;}
+    if(/[A-Za-z]/.test(c)){T.push({k:'let',v:c});i++;continue;}
+    T.push({k:'ch',v:c});i++;
+  }
+  return T;
+}
+function parseMath(src){
+  const T=tokenize(src);let p=0;
+  const peek=()=>T[p];
+  function seq(stop){
+    const out=[];
+    while(p<T.length){
+      const t=T[p];
+      if(t.k==='}')break;
+      if(t.k==='cmd'&&t.v==='right')break;
+      out.push(atom());
+    }
+    return out;
+  }
+  function group(){ // espera '{'
+    if(peek()&&peek().k==='{'){p++;const g=seq();if(peek()&&peek().k==='}')p++;return g;}
+    return [atomNoScript()];
+  }
+  function atom(){
+    let base=atomNoScript();
+    let sub=null,sup=null;
+    while(peek()&&(peek().k==='_'||peek().k==='^')){
+      const k=peek().k;p++;
+      const g=group();
+      if(k==='_')sub=g;else sup=g;
+    }
+    if(sub&&sup)return {t:'subsup',b:[base],s:sub,e:sup};
+    if(sub)return {t:'sub',b:[base],s:sub};
+    if(sup)return {t:'sup',b:[base],e:sup};
+    return base;
+  }
+  function atomNoScript(){
+    const t=T[p++];
+    if(!t)return {t:'r',v:''};
+    if(t.k==='{'){const g=seq();if(peek()&&peek().k==='}')p++;return {t:'grp',g};}
+    if(t.k==='text')return {t:'r',v:t.v,nor:true,bold:t.sty==='mathbf'};
+    if(t.k==='num')return {t:'r',v:t.v};
+    if(t.k==='let')return {t:'r',v:t.v};
+    if(t.k==='ch'){
+      let v=t.v;if(v==='-')v='−';if(v==='*')v='⋅';
+      return {t:'r',v,op:true};
+    }
+    if(t.k==='cmd'){
+      const c=t.v;
+      if(c==='frac'){const n=group(),d=group();return {t:'frac',n,d};}
+      if(c==='sqrt'){
+        let deg=null;
+        if(peek()&&peek().k==='ch'&&peek().v==='['){p++;deg=[];while(p<T.length&&!(T[p].k==='ch'&&T[p].v===']'))deg.push(atom());p++;}
+        return {t:'rad',deg,b:group()};
+      }
+      if(c==='left'){
+        const o=T[p++];let ob=o?(o.k==='cmd'?(o.v==='{'||o.v==='lbrace'?'{':o.v==='|'?'|':''):o.v):'(';
+        if(ob==='.')ob='';
+        const inner=seq();
+        let cb=')';
+        if(peek()&&peek().k==='cmd'&&peek().v==='right'){p++;const q=T[p++];cb=q?(q.k==='cmd'?(q.v==='}'||q.v==='rbrace'?'}':q.v==='|'?'|':''):q.v):')';if(cb==='.')cb='';}
+        return {t:'d',o:ob,c:cb,g:inner};
+      }
+      if(FUNCS.includes(c))return {t:'r',v:c,nor:true};
+      if(c==='{'||c==='lbrace')return {t:'r',v:'{',op:true};
+      if(c==='}'||c==='rbrace')return {t:'r',v:'}',op:true};
+      if(c==='%')return {t:'r',v:'%',op:true};
+      if(c==='|')return {t:'r',v:'|',op:true};
+      if(c==='quad'||c==='qquad'||c===','||c===';'||c===' ')return {t:'r',v:SYM[c],nor:true};
+      if(c in SYM)return {t:'r',v:SYM[c],op:true};
+      return {t:'r',v:c};
+    }
+    return {t:'r',v:t.v||''};
+  }
+  return seq();
+}
+const MRPR='<w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math" w:cs="Cambria Math"/></w:rPr>';
+function runX(v,nor,bold){
+  const rp=nor?'<m:rPr><m:nor/></m:rPr><w:rPr>'+(bold?'<w:b/>':'')+'</w:rPr>':'<m:rPr>'+(bold?'<m:sty m:val="b"/>':'')+'</m:rPr>'+MRPR;
+  return `<m:r>${rp}<m:t xml:space="preserve">${esc(v)}</m:t></m:r>`;
+}
+function emitSeq(nodes){
+  // junta runs adjacentes comuns
+  const out=[];
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i];
+    if(n.t==='r'&&!n.nor){
+      let v=n.v;
+      while(i+1<nodes.length&&nodes[i+1].t==='r'&&!nodes[i+1].nor&&!!nodes[i+1].op===!!n.op&&!n.op){v+=nodes[i+1].v;i++;}
+      out.push(runX(v,false,false));
+    }else out.push(emit(n));
+  }
+  return out.join('');
+}
+function emit(n){
+  switch(n.t){
+    case 'r': return runX(n.v,n.nor,n.bold);
+    case 'grp': return emitSeq(n.g);
+    case 'frac': return `<m:f><m:num>${emitSeq(n.n)}</m:num><m:den>${emitSeq(n.d)}</m:den></m:f>`;
+    case 'rad': return `<m:rad><m:radPr>${n.deg?'':'<m:degHide m:val="1"/>'}</m:radPr><m:deg>${n.deg?emitSeq(n.deg):''}</m:deg><m:e>${emitSeq(n.b)}</m:e></m:rad>`;
+    case 'sub': return `<m:sSub><m:e>${emitSeq(n.b)}</m:e><m:sub>${emitSeq(n.s)}</m:sub></m:sSub>`;
+    case 'sup': return `<m:sSup><m:e>${emitSeq(n.b)}</m:e><m:sup>${emitSeq(n.e)}</m:sup></m:sSup>`;
+    case 'subsup': return `<m:sSubSup><m:e>${emitSeq(n.b)}</m:e><m:sub>${emitSeq(n.s)}</m:sub><m:sup>${emitSeq(n.e)}</m:sup></m:sSubSup>`;
+    case 'd': return `<m:d><m:dPr><m:begChr m:val="${esc(n.o)}"/><m:endChr m:val="${esc(n.c)}"/></m:dPr><m:e>${emitSeq(n.g)}</m:e></m:d>`;
+  }
+  return '';
+}
+function omml(latex){return emitSeq(parseMath(latex));}
+
+/* ---------------- texto com $math$ e **negrito** ---------------- */
+function textRuns(s,o={}){
+  const rp=(b)=>{let x='';if(o.font)x+=`<w:rFonts w:ascii="${o.font}" w:hAnsi="${o.font}"/>`;if(b||o.bold)x+='<w:b/>';if(o.italic)x+='<w:i/>';if(o.color)x+=`<w:color w:val="${o.color}"/>`;if(o.size)x+=`<w:sz w:val="${o.size}"/><w:szCs w:val="${o.size}"/>`;return x?`<w:rPr>${x}</w:rPr>`:'';};
+  let out='';
+  String(s).split('$').forEach((seg,i)=>{
+    if(i%2===1){out+=`<m:oMath>${omml(seg)}</m:oMath>`;return;}
+    seg.split('**').forEach((t,j)=>{
+      if(!t)return;
+      const lines=t.split('\n');
+      lines.forEach((ln,k)=>{
+        if(k>0)out+='<w:r><w:br/></w:r>';
+        if(ln)out+=`<w:r>${rp(j%2===1)}<w:t xml:space="preserve">${esc(ln)}</w:t></w:r>`;
+      });
+    });
+  });
+  return out;
+}
+
+/* ---------------- documento ---------------- */
+const BLUE='154EA8', BLUEL='E8F1FE', LINE='BFD3EE', GREY='6B7C93';
+const W_TEXT=9638; // twips: A4 com margens de 2 cm
+class Doc{
+  constructor(o={}){
+    this.o=o;this.body=[];this.media=[];this.rid=10;this.fig=0;this.tab=0;this.id=1;
+  }
+  _p(inner,ppr=''){this.body.push(`<w:p>${ppr?`<w:pPr>${ppr}</w:pPr>`:''}${inner}</w:p>`);}
+  h(level,text){this._p(textRuns(text),`<w:pStyle w:val="Heading${level}"/><w:keepNext/>`);}
+  p(text,o={}){
+    let ppr='';
+    if(o.style)ppr+=`<w:pStyle w:val="${o.style}"/>`;
+    if(o.keep)ppr+='<w:keepNext/>';
+    if(o.after!==undefined||o.before!==undefined)ppr+=`<w:spacing w:before="${o.before||0}" w:after="${o.after===undefined?120:o.after}"/>`;
+    if(o.align)ppr+=`<w:jc w:val="${o.align}"/>`;
+    this._p(textRuns(text,o),ppr);
+  }
+  note(text){this._p(textRuns(text,{italic:true,color:GREY,size:18}),'<w:spacing w:before="40" w:after="120"/>');}
+  eq(latex){this.body.push(`<w:p><w:pPr><w:keepLines/><w:spacing w:before="40" w:after="60"/><w:jc w:val="center"/></w:pPr><m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr><m:oMath>${omml(latex)}</m:oMath></m:oMathPara></w:p>`);}
+  eqs(list){list.forEach(l=>this.eq(l));}
+  pagebreak(){this.body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');}
+  spacer(n=120){this._p('',`<w:spacing w:before="0" w:after="${n}"/>`);}
+  caption(kind,text){
+    const n=kind==='Figura'?++this.fig:++this.tab;
+    return `**${kind} ${n}** – ${text}`;
+  }
+  /* tabela: {head:[], rows:[[]], cols:[{w:1,al:'l'|'r'|'c'}], caption, hl:[indices de linhas destacadas]} */
+  table(t){
+    const nc=(t.head||t.rows[0]).length;
+    const cols=t.cols||Array.from({length:nc},(_,i)=>({w:1,al:i===0?'l':'r'}));
+    const tw=cols.reduce((a,c)=>a+(c.w||1),0);
+    const ws=cols.map(c=>Math.round(W_TEXT*(c.w||1)/tw));
+    const bd=`<w:tblBorders><w:top w:val="single" w:sz="6" w:color="${BLUE}"/><w:bottom w:val="single" w:sz="6" w:color="${BLUE}"/><w:insideH w:val="single" w:sz="4" w:color="${LINE}"/></w:tblBorders>`;
+    if(t.caption)this._p(textRuns(this.caption('Tabela',t.caption),{size:19,color:'1B2A41'}),'<w:keepNext/><w:spacing w:before="120" w:after="60"/>');
+    const cell=(txt,i,head,hl)=>{
+      const al=({l:'left',r:'right',c:'center'})[cols[i].al||'l'];
+      const shade=head?`<w:shd w:val="clear" w:color="auto" w:fill="${BLUEL}"/>`:hl?`<w:shd w:val="clear" w:color="auto" w:fill="F3F8FF"/>`:'';
+      return `<w:tc><w:tcPr><w:tcW w:w="${ws[i]}" w:type="dxa"/>${shade}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="30" w:after="30"/><w:jc w:val="${head&&al==='right'?'right':al}"/></w:pPr>${textRuns(txt===null||txt===undefined?'':txt,{size:18,bold:head||hl,color:head?BLUE:undefined})}</w:p></w:tc>`;
+    };
+    let x=`<w:tbl><w:tblPr><w:tblW w:w="${W_TEXT}" w:type="dxa"/><w:tblLayout w:type="fixed"/>${bd}<w:tblCellMar><w:left w:w="70" w:type="dxa"/><w:right w:w="70" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${ws.map(w=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+    if(t.head)x+=`<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>${t.head.map((c,i)=>cell(c,i,true)).join('')}</w:tr>`;
+    t.rows.forEach((r,ri)=>{x+=`<w:tr><w:trPr><w:cantSplit/></w:trPr>${r.map((c,i)=>cell(c,i,false,(t.hl||[]).includes(ri))).join('')}</w:tr>`;});
+    x+='</w:tbl>';
+    this.body.push(x);
+    this._p('','<w:spacing w:before="0" w:after="80"/>');
+  }
+  /* par chave-valor (2 colunas) */
+  kv(rows,cap){this.table({head:null,rows,cols:[{w:3,al:'l'},{w:2,al:'r'}],caption:cap});}
+  _img(img,wcm){
+    const rid='rId'+(this.rid++), n=this.media.length+1, name=`image${n}.png`;
+    this.media.push({rid,name,data:img.bytes});
+    const cx=Math.round(wcm*360000), cy=Math.round(cx*img.h/img.w), id=this.id++;
+    return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="Imagem ${id}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  }
+  figure(img,wcm,cap){
+    this._p(this._img(img,wcm),'<w:keepNext/><w:spacing w:before="80" w:after="40"/><w:jc w:val="center"/>');
+    if(cap)this._p(textRuns(this.caption('Figura',cap),{size:18,color:GREY}),'<w:spacing w:before="0" w:after="140"/><w:jc w:val="center"/>');
+  }
+  /* varias figuras lado a lado: items=[{img,cap}] */
+  figures(items,wcm){
+    const n=items.length,w=Math.floor(W_TEXT/n);
+    let x=`<w:tbl><w:tblPr><w:tblW w:w="${W_TEXT}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="40" w:type="dxa"/><w:right w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${items.map(()=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>`;
+    items.forEach(it=>{
+      x+=`<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:spacing w:before="40" w:after="20"/><w:jc w:val="center"/></w:pPr>${this._img(it.img,wcm)}</w:p><w:p><w:pPr><w:spacing w:before="0" w:after="100"/><w:jc w:val="center"/></w:pPr>${textRuns(this.caption('Figura',it.cap),{size:17,color:GREY})}</w:p></w:tc>`;
+    });
+    x+='</w:tr></w:tbl>';
+    this.body.push(x);this._p('','<w:spacing w:before="0" w:after="60"/>');
+  }
+  cover(c){
+    this._p('','<w:spacing w:before="1800" w:after="0"/>');
+    this._p(textRuns(c.kicker||'',{size:22,color:GREY,bold:true}),'<w:spacing w:after="80"/>');
+    this._p(textRuns(c.title,{size:56,bold:true,color:BLUE}),'<w:pBdr><w:bottom w:val="single" w:sz="18" w:space="8" w:color="1F6FEB"/></w:pBdr><w:spacing w:after="160"/>');
+    this._p(textRuns(c.subtitle||'',{size:28,color:'1B2A41'}),'<w:spacing w:after="600"/>');
+    this.table({head:null,rows:c.info,cols:[{w:1.2,al:'l'},{w:3,al:'l'}]});
+    if(c.toc){
+      this._p(textRuns('Conteúdo',{size:24,bold:true,color:BLUE}),'<w:spacing w:before="400" w:after="80"/>');
+      c.toc.forEach(t=>this._p(textRuns(t,{size:21}),'<w:spacing w:before="0" w:after="40"/><w:ind w:left="240"/>'));
+    }
+    this.pagebreak();
+  }
+  bytes(){
+    const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+    const sect=`<w:sectPr><w:headerReference w:type="default" r:id="rId3"/><w:footerReference w:type="default" r:id="rId4"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1418" w:right="1134" w:bottom="1247" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>`;
+    const document=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${this.body.join('')}${sect}</w:body></w:document>`;
+    const hdr=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="4" w:color="${LINE}"/></w:pBdr><w:tabs><w:tab w:val="right" w:pos="${W_TEXT}"/></w:tabs></w:pPr>${textRuns(this.o.header||'',{size:17,color:GREY})}<w:r><w:tab/></w:r>${textRuns(this.o.headerRight||'',{size:17,color:BLUE,bold:true})}</w:p></w:hdr>`;
+    const ftr=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${NS}><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="${W_TEXT}"/></w:tabs></w:pPr>${textRuns(this.o.footer||'',{size:16,color:GREY})}<w:r><w:tab/></w:r><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="${GREY}"/></w:rPr><w:t xml:space="preserve">Página </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="${GREY}"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="${GREY}"/></w:rPr><w:t xml:space="preserve"> de </w:t></w:r><w:fldSimple w:instr="NUMPAGES"><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="${GREY}"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
+    const hs=(id,sz,after,before,color,extra='')=>`<w:style w:type="paragraph" w:styleId="Heading${id}"><w:name w:val="heading ${id}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="${before}" w:after="${after}"/><w:outlineLvl w:val="${id-1}"/>${extra}</w:pPr><w:rPr><w:b/><w:color w:val="${color}"/><w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr></w:style>`;
+    const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${NS}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>`+
+      hs(1,32,120,360,BLUE,`<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="3" w:color="1F6FEB"/></w:pBdr>`)+hs(2,26,80,240,BLUE)+hs(3,23,60,180,'1B2A41')+`</w:styles>`;
+    const settings=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${NS}><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+    const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`;
+    const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`;
+    const drels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>${this.media.map(m=>`<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')}</Relationships>`;
+    const now=new Date().toISOString().replace(/\.\d+Z$/,'Z');
+    const core=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(this.o.title||'Memória de cálculo')}</dc:title><dc:creator>${esc(this.o.author||'')}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`;
+    const files=[
+      {name:'[Content_Types].xml',data:enc.encode(ct)},{name:'_rels/.rels',data:enc.encode(rels)},
+      {name:'word/document.xml',data:enc.encode(document)},{name:'word/styles.xml',data:enc.encode(styles)},
+      {name:'word/settings.xml',data:enc.encode(settings)},{name:'word/header1.xml',data:enc.encode(hdr)},
+      {name:'word/footer1.xml',data:enc.encode(ftr)},{name:'word/_rels/document.xml.rels',data:enc.encode(drels)},
+      {name:'docProps/core.xml',data:enc.encode(core)},
+      ...this.media.map(m=>({name:'word/media/'+m.name,data:m.data}))];
+    return zip(files);
+  }
+}
+return {Doc,omml,zip,crc32};
+})();
+if(typeof module!=='undefined')module.exports=DOCX;
+
 </script>
 <script>
 const PAL=['#fdf0c9','#d9f2d4','#d3d9f4','#f6dfe0','#e3ddf0','#ffe3c7','#d1eef2'];
@@ -1515,7 +1827,7 @@ function getState(){
     cutTension:$('cutTension').checked,paLinear:$('paLinear').checked,pp1zero:$('pp1zero').checked,
     fichaF:num('fichaF',1.2),fsP:num('fsP',1),
     deltaA:num('deltaA',15),deltaP:num('deltaP',0),beta:num('beta',0),
-    layersA:st.lay.cortina.A,layersP:st.lay.cortina.P,lay:st.lay,muro};
+    layersA:st.lay.cortina.A,layersP:st.lay.cortina.P,lay:st.lay,muro,info:reportInfo()};
 }
 $('btnSave').onclick=()=>{
   const blob=new Blob([JSON.stringify(getState(),null,2)],{type:'application/json'});
@@ -1538,6 +1850,7 @@ $('fileIn').onchange=ev=>{
         MURO_CHK.forEach(k=>{ if(d.muro[k]!==undefined) $(k).checked=d.muro[k]; });
         if(d.muro.mCap) $('mCap').value=d.muro.mCap;
       }
+      if(d.info){ try{ localStorage.setItem('rpInfo',JSON.stringify(d.info)); }catch(e){} }
       window.curTab='emp'; applyMode();
       ['H','D','q','qP','deltaA','deltaP','beta','fichaF','fsP'].forEach(k=>{ if(d[k]!==undefined) $(k).value=d[k]; });
       if(d.cutTension!==undefined) $('cutTension').checked=d.cutTension;
@@ -1551,6 +1864,299 @@ $('fileIn').onchange=ev=>{
   r.readAsText(f);
 };
 $('btnCalc').onclick=()=>$('results').scrollIntoView({behavior:'smooth'});
+
+/* =====================================================================
+   RELATORIO WORD (.docx) - memoria de calculo passo a passo
+   Usa DOCX (script id="docxlib"), as funcoes de formatacao f2/f3/fv e os
+   resultados ja calculados (window.lastRes/lastFic/lastMuro).
+   ===================================================================== */
+const LX=String.raw;
+const nn=v=>String(+(+v).toFixed(2)).replace('.',',');          // entrada: sem zeros a direita
+const N3=v=>isFinite(v)?f3(v):'—';
+const SIG=(ok)=>ok?'ATENDE':'NÃO ATENDE';
+
+async function svgToPng(svg,scale=2.5){
+  const vb=svg.viewBox.baseVal, w=vb.width, h=vb.height;
+  const c=svg.cloneNode(true);
+  c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  c.setAttribute('width',w); c.setAttribute('height',h);
+  if(!c.getAttribute('font-family')) c.setAttribute('font-family','Segoe UI,system-ui,Arial,sans-serif');
+  const xml=new XMLSerializer().serializeToString(c);
+  const url=URL.createObjectURL(new Blob([xml],{type:'image/svg+xml;charset=utf-8'}));
+  const img=new Image();
+  await new Promise((ok,er)=>{img.onload=ok;img.onerror=()=>er(new Error('svg'));img.src=url;});
+  const cv=document.createElement('canvas'); cv.width=Math.round(w*scale); cv.height=Math.round(h*scale);
+  const ctx=cv.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.drawImage(img,0,0,cv.width,cv.height); URL.revokeObjectURL(url);
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  return {bytes:new Uint8Array(await blob.arrayBuffer()),w:cv.width,h:cv.height};
+}
+
+/* ---------- blocos comuns ---------- */
+function rpLayers(d,inp,mode){
+  const lt=(L)=>({head:['Camada','Espessura (m)','φ (°)','c (kPa)','γ (kN/m³)'],
+    rows:L.map((l,i)=>[`${i+1}`,i===L.length-1?`${nn(l.t)} (até o fundo)`:nn(l.t),nn(l.phi),nn(l.c),nn(l.g)]),
+    cols:[{w:1,al:'c'},{w:2,al:'r'},{w:1,al:'r'},{w:1,al:'r'},{w:1.4,al:'r'}]});
+  d.table({...lt(inp.layersA),caption:'Camadas do lado ativo (solo contido), a partir do topo do terreno'});
+  d.table({...lt(inp.layersP),caption:mode==='muro'?'Camadas do lado passivo (solo à frente do muro / fundação), a partir do terreno frontal':'Camadas do lado passivo (solo escavado), a partir do nível da escavação'});
+}
+
+function rpTheory(d,inp){
+  d.p('As tensões horizontais são calculadas por camada, a partir da tensão vertical efetiva $\\sigma_v$ (sobrecarga mais peso próprio das camadas acima):');
+  d.eq(LX`\sigma_v = q + \sum \gamma_i\, h_i`);
+  d.eqs([LX`P_a = \sigma_v\, K_a - 2c\sqrt{K_a}`,LX`P_p = \sigma_v\, K_p + 2c\sqrt{K_p}`]);
+  if(inp.method==='rankine'){
+    d.p('**Método de Rankine** (terreno horizontal, parede vertical e lisa):');
+    d.eqs([LX`K_a = \tan^2\left(45^\circ - \frac{\phi}{2}\right)`,LX`K_p = \tan^2\left(45^\circ + \frac{\phi}{2}\right)`]);
+  }else{
+    d.p('**Método de Coulomb** (parede vertical, $\\alpha = 90^\\circ$, com atrito solo–parede $\\delta$ e terreno inclinado $\\beta$ no lado ativo):');
+    d.eq(LX`K_a = \frac{\sin^2(\alpha+\phi)}{\sin^2\alpha\,\sin(\alpha-\delta)\left[1+\sqrt{\dfrac{\sin(\phi+\delta)\sin(\phi-\beta)}{\sin(\alpha-\delta)\sin(\alpha+\beta)}}\right]^2}`.replace(/\\dfrac/g,'\\frac'));
+    d.eq(LX`K_p = \frac{\sin^2(\alpha-\phi)}{\sin^2\alpha\,\sin(\alpha+\delta)\left[1-\sqrt{\dfrac{\sin(\phi+\delta)\sin(\phi+\beta)}{\sin(\alpha+\delta)\sin(\alpha+\beta)}}\right]^2}`.replace(/\\dfrac/g,'\\frac'));
+    d.p(`O termo de peso usa a componente horizontal, $K\\cos\\delta$, e a coesão usa $2c\\sqrt{K}$ com o $K$ de Coulomb. Parâmetros adotados: $\\delta_a = ${nn(inp.deltaA)}^\\circ$, $\\delta_p = ${nn(inp.deltaP)}^\\circ$, $\\beta = ${nn(inp.beta)}^\\circ$.`);
+  }
+  const op=[];
+  if(inp.cutTension) op.push(inp.paLinear?'zona de tração desprezada ($P_a<0$ adotado nulo; no topo, diagrama ativo em triângulo a partir de zero, como na folha de cálculo)':'zona de tração desprezada ($P_a<0$ adotado nulo, corte no ponto real $z_0$)');
+  else op.push('zona de tração mantida (tensões ativas negativas não são cortadas)');
+  if(inp.pp1zero) op.push('passivo nulo no nível da escavação ($P_{p1}=0$)');
+  if(inp.fsP&&inp.fsP!==1) op.push(`passivo reduzido pelo fator de segurança $FS_p = ${nn(inp.fsP)}$`);
+  d.p('Opções adotadas: '+op.join('; ')+'.');
+}
+
+function rpCoefs(d,res,inp){
+  const one=(k,side)=>{
+    const sym=side==='A'?'K_a':'K_p', sgn=side==='A'?'-':'+';
+    if(inp.method==='rankine'){
+      d.eq(`\\text{${side}${k.i+1}}:\\ ${sym} = \\tan^2\\left(45^\\circ ${sgn} \\frac{${nn(k.phi)}^\\circ}{2}\\right) = ${N3(k.Ktot)}`);
+    }else{
+      const dl=side==='A'?inp.deltaA:inp.deltaP;
+      d.eq(`\\text{${side}${k.i+1}}:\\ \\phi=${nn(k.phi)}^\\circ,\\ \\delta=${nn(dl)}^\\circ${side==='A'?`,\\ \\beta=${nn(inp.beta)}^\\circ`:''}\\ \\Rightarrow\\ ${sym} = ${N3(k.Ktot)},\\quad ${sym}\\cos\\delta = ${N3(k.K)}`);
+    }
+  };
+  d.p('**Lado ativo**',{keep:true,after:40}); res.kA.forEach(k=>one(k,'A'));
+  d.p('**Lado passivo**',{keep:true,after:40,before:80}); res.kP.forEach(k=>one(k,'P'));
+}
+
+function rpPressures(d,res,inp,side,zref){
+  const rows=side==='A'?res.rowsA:res.rowsP;
+  const by={};rows.forEach(r=>(by[r.layer]=by[r.layer]||[]).push(r));
+  const P=side==='A'?'P_a':'P_p', sg=side==='A'?'-':'+', Kn=side==='A'?'K_a':'K_p';
+  Object.keys(by).forEach(k=>{
+    const [t,b]=by[k]; const dz=b.z-t.z;
+    d.h(3,`Camada ${k} — ${side==='A'?'z':'z'}${side==='P'?'p':''} de ${f2(t.z)} a ${f2(b.z)} m`);
+    d.eq(LX`\sigma_{v,\mathrm{base}} = \sigma_{v,\mathrm{topo}} + \gamma\,\Delta z = ${f2(t.sv)} + ${nn(t.g)} \cdot ${f2(dz)} = ${f2(b.sv)}\ \text{kPa}`);
+    [t,b].forEach(r=>{
+      d.eq(`${P}\\,(\\text{${r.pos}}) = \\sigma_v\\, ${Kn} ${sg} 2c\\sqrt{${Kn}} = ${f2(r.sv)} \\cdot ${N3(r.K)} ${sg} 2 \\cdot ${nn(r.c)} \\cdot \\sqrt{${N3(r.Kc)}} = ${f2(r.raw)}\\ \\text{kPa}`);
+      if(side==='A'&&r.raw<0&&r.val===0) d.note('Tensão negativa (tração): adotada nula.');
+      if(side==='P'&&r.zeroed) d.note('Adotado $P_{p1}=0$ no nível da escavação.');
+    });
+  });
+  d.table({caption:side==='A'?'Resumo do empuxo ativo':'Resumo do empuxo passivo',
+    head:['Ponto',side==='A'?'z (m)':'zp (m)','σv (kPa)',`σv·K (kPa)`,'2c√K (kPa)','P calc. (kPa)','P adotado (kPa)'],
+    rows:rows.map(r=>[`${r.layer} · ${r.pos}`,f2(r.z),f2(r.sv),f2(r.t1),f2(r.t2c),f2(r.raw),f2(r.val)]),
+    cols:[{w:1.6,al:'l'},{w:1,al:'r'},{w:1,al:'r'},{w:1.1,al:'r'},{w:1.1,al:'r'},{w:1.2,al:'r'},{w:1.3,al:'r'}]});
+}
+
+/* ---------- CORTINA ---------- */
+function rpCortina(d,inp,res,fic,imgs){
+  const pf=window.lastPerfis;
+  let s=1;
+  d.h(1,`${s++}. Dados de entrada`);
+  d.kv([['Altura de contenção h',`${nn(inp.H)} m`],['Ficha informada D',`${nn(inp.D)} m`],['Sobrecarga no topo q',`${nn(inp.q)} kPa`],['Sobrecarga no lado passivo qp',`${nn(inp.qP)} kPa`],
+    ['Método',inp.method==='rankine'?'Rankine':'Coulomb'],['Fator de segurança no passivo',nn(inp.fsP)],['Fator da ficha de projeto',nn(inp.fichaF)]],'Dados gerais');
+  rpLayers(d,inp,'cortina');
+  d.h(1,`${s++}. Esquema considerado`);
+  d.figure(imgs.schema,15.5,'Esquema da cortina com as cotas, camadas, sobrecarga e pontos de atuação das pressões (Pa1, Pa2A, Pa2B, Pa3, Pp1, Pp2, Ppe).');
+  d.h(1,`${s++}. Método e hipóteses`);
+  rpTheory(d,inp);
+  d.h(1,`${s++}. Coeficientes de empuxo`);
+  rpCoefs(d,res,inp);
+  d.h(1,`${s++}. Empuxo ativo por camada`);
+  rpPressures(d,res,inp,'A');
+  d.h(1,`${s++}. Empuxo passivo por camada`);
+  d.p('$z_p$ é medido a partir do nível da escavação.',{after:60});
+  rpPressures(d,res,inp,'P');
+  d.h(1,`${s++}. Resultantes`);
+  d.kv([['Ea (0 → h)',`${fv(res.EaH.E)} kN/m, a ${fv(res.EaH.zbar)} m do topo`],['Ea (h → h + D)',`${fv(res.EaD.E)} kN/m`],['Ea total (0 → h + D)',`${fv(res.EaT.E)} kN/m, a ${fv(res.EaT.zbar)} m do topo`],['Ep (0 → D)',`${fv(res.Ep.E)} kN/m, a ${fv(res.Ep.zbar)} m abaixo da escavação`]],'Resultantes na ficha informada D');
+  if(!fic.ok){ d.p('Não foi possível determinar a ficha: '+fic.warn.join(' ')); return; }
+
+  d.h(1,`${s++}. Dimensionamento da ficha (cortina em balanço)`);
+  d.p(`Método da folha de cálculo: considera-se $P_{p1}=0$ no nível da escavação e $P_{pe}=P_{p2}-P_{a3}$ na ponta C. O ponto de giro O fica na profundidade $x'$ em que o empuxo líquido se anula, e a distância $x$ (de O até C) vem do equilíbrio de momentos em C.${fic.FSp!==1?` O passivo foi dividido por $FS_p = ${nn(fic.FSp)}$.`:''}`);
+  d.table({caption:'Pressões no diagrama (notação da folha)',head:['Símbolo','Posição','Valor (kPa)'],
+    rows:[['Pa1','topo (z = 0)',fv(fic.Pa1)],['Pa2A','z = h, camada de cima',fv(fic.Pa2A)],['Pa2B','z = h, camada de baixo',fv(fic.Pa2B)],['Pa3',`ponta C (z = h + Z)`,fv(fic.Pa3)],['Pp1','nível da escavação',fv(fic.Pp1)],['Pp2','ponta C (zp = Z)',fv(fic.Pp2)],['Ppe = Pp2 − Pa3','passivo líquido em C',fv(fic.Ppe)]],
+    cols:[{w:1.4,al:'l'},{w:2,al:'l'},{w:1,al:'r'}]});
+  d.h(3,'Ponto de giro O');
+  d.eq(LX`P_{pe}(x') = 0\ \Rightarrow\ x' = ${fv(fic.xp)}\ \text{m}\ \ \left(\text{O em } z = h + x' = ${fv(inp.H+fic.xp)}\ \text{m}\right)`);
+  d.h(3,'Equilíbrio de momentos em C');
+  d.table({caption:'Resultantes e braços em relação à ponta C',head:['Resultante','E (kN/m)','y (m)','E·y (kN·m/m)'],
+    rows:[['E1 (ativo, 0 → h)',fv(fic.E1),fv(fic.y1),fv(fic.M1)],['E2 (líquido ativo, h → O)',fv(fic.E2),fv(fic.y2),fv(fic.M2)],['E3 (líquido passivo, O → C)',fv(fic.E3),fv(fic.y3),'− '+fv(fic.M3)]],
+    cols:[{w:3,al:'l'},{w:1,al:'r'},{w:1,al:'r'},{w:1.4,al:'r'}]});
+  d.eq(LX`\sum M_C = E_1 y_1 + E_2 y_2 - E_3 y_3 = ${fv(fic.E1)} \cdot ${fv(fic.y1)} + ${fv(fic.E2)} \cdot ${fv(fic.y2)} - ${fv(fic.E3)} \cdot ${fv(fic.y3)} = ${fv(fic.resid)} \approx 0`);
+  d.eq(LX`x = ${fv(fic.x)}\ \text{m}`);
+  d.h(3,'Ficha teórica e de projeto');
+  d.eqs([LX`Z = x + x' = ${fv(fic.x)} + ${fv(fic.xp)} = ${fv(fic.Z)}\ \text{m}`,
+         LX`D_{\mathrm{proj}} = ${nn(fic.factor)} \cdot Z = ${nn(fic.factor)} \cdot ${fv(fic.Z)} = ${fv(fic.Zproj)}\ \text{m}`,
+         LX`L = h + D_{\mathrm{proj}} = ${fv(inp.H)} + ${fv(fic.Zproj)} = ${fv(fic.L)}\ \text{m}`]);
+
+  d.h(1,`${s++}. Diagramas de empuxo, cortante e momento fletor`);
+  if(imgs.charts&&imgs.charts.length===4){
+    d.figures([{img:imgs.charts[0],cap:'Empuxos ativo e passivo'},{img:imgs.charts[1],cap:'Empuxo líquido'}],8);
+    d.figures([{img:imgs.charts[2],cap:'Esforço cortante V'},{img:imgs.charts[3],cap:'Momento fletor M'}],8);
+  }
+  d.p(`O empuxo líquido é $n(z) = P_a(z) - P_p(z-h)$; o cortante é $V(z)=\\int n\\,dz$ e o momento $M(z)=\\int V\\,dz$, por metro de cortina, até a ponta teórica C ($z = ${fv(fic.zC)}$ m).`);
+  d.eqs([LX`M_{\max} = ${fv(Math.abs(pf.Mmax))}\ \text{kN·m/m}\quad (z = ${fv(pf.zMmax)}\ \text{m},\ V = 0)`,
+         LX`V_{\max} = ${fv(Math.abs(pf.Vmax))}\ \text{kN/m}\quad (z = ${fv(pf.zVmax)}\ \text{m})`]);
+
+  d.h(1,`${s++}. Resumo dos resultados`);
+  d.table({head:['Resultado','Valor','Unidade'],rows:[
+    ['Ficha teórica Z = x + x′',fv(fic.Z),'m'],[`Ficha de projeto (${nn(fic.factor)}·Z)`,fv(fic.Zproj),'m'],['Comprimento total (h + ficha)',fv(fic.L),'m'],
+    ['Ponto de giro x′',fv(fic.xp),'m abaixo da escavação'],['Momento máximo Mmax',fv(Math.abs(pf.Mmax)),'kN·m/m'],['Cortante máximo Vmax',fv(Math.abs(pf.Vmax)),'kN/m']],
+    cols:[{w:3,al:'l'},{w:1,al:'r'},{w:2,al:'l'}],hl:[1,2]});
+  const w=[...new Set([...(res.warn||[]),...(fic.warn||[])])];
+  if(w.length){ d.h(3,'Avisos do cálculo'); w.forEach(x=>d.p('• '+x,{after:40})); }
+}
+
+/* ---------- MURO ---------- */
+function rpMuro(d,inp,m,imgs){
+  const {g,o,Ea,Ep,tomb,desl,base,cap,stem,toe,heel}=m;
+  let s=1;
+  d.h(1,`${s++}. Dados de entrada`);
+  d.kv([['Altura do fuste hf',`${nn(g.hf)} m`],['Largura do topo do fuste bt',`${nn(g.bt)} m`],['Largura da base do fuste bb',`${nn(g.bb)} m`],['Altura da sapata hs',`${nn(g.hs)} m`],
+    ['Comprimento da ponta Lp',`${nn(g.Lp)} m`],['Comprimento do talão Lt',`${nn(g.Lt)} m`],['Embutimento Df',`${nn(m.Df)} m`],['Peso específico do concreto',`${nn(g.gc)} kN/m³`],
+    ['Largura da base B = Lp + bb + Lt',`${f2(m.B)} m`],['Altura total H = hf + hs',`${f2(m.Htot)} m`],['Sobrecarga q (aterro)',`${nn(inp.q)} kPa`],['Sobrecarga qp (frente)',`${nn(inp.qP)} kPa`]],'Geometria e cargas');
+  d.kv([['Método de empuxo',inp.method==='rankine'?'Rankine':'Coulomb'],['Atrito base–solo δb',`${nn(o.deltaB)}°`],['Adesão ca',`${nn(o.ca)} kPa`],
+    ['Capacidade de carga',o.capMethod==='meyerhof'?'Meyerhof':'Vesic'],['FS mínimos (tomb. / desl. / cap.)',`${nn(o.FSt)} / ${nn(o.FSd)} / ${nn(o.FSc)}`],['Coef. de majoração γf',nn(o.gf)],
+    ['Passivo frontal',o.usePassive?'considerado':'desprezado'],['Sobrecarga estabilizante no talão',o.qStab?'sim':'não'],['Solo sobre a ponta no pé',o.soilToe?'considerado':'desprezado']],'Parâmetros das verificações');
+  rpLayers(d,inp,'muro');
+  d.h(1,`${s++}. Esquema considerado`);
+  d.figure(imgs.schema,15.5,'Esquema do muro: pesos (W), empuxo ativo no plano vertical em x = B, tensões na base e resultante R.');
+  d.h(1,`${s++}. Método e hipóteses`);
+  rpTheory(d,inp);
+  d.p('O empuxo ativo é calculado no plano vertical que passa pelo fim do talão (x = B); o solo acima do talão e acima das costas inclinadas do fuste entra como peso. Os momentos são tomados em relação à ponta do pé.');
+  d.h(1,`${s++}. Coeficientes de empuxo`);
+  rpCoefs(d,m.emp,inp);
+  d.h(1,`${s++}. Empuxo ativo por camada`);
+  rpPressures(d,m.emp,inp,'A');
+  d.h(1,`${s++}. Empuxo passivo por camada`);
+  d.p('$z_p$ é medido a partir do terreno à frente do muro.',{after:60});
+  rpPressures(d,m.emp,inp,'P');
+  d.h(1,`${s++}. Empuxos resultantes`);
+  d.eq(LX`E_a = ${fv(Ea.H)}\ \text{kN/m}\quad \text{atuando a } y = ${fv(Ea.y)}\ \text{m da base}\ \Rightarrow\ M_{\mathrm{ov}} = E_a\, y = ${fv(Ea.Mov)}\ \text{kN·m/m}`);
+  if(Ea.v>1e-9) d.eq(LX`E_{a,v} = E_{a,H}\tan\delta = ${fv(Ea.H)} \cdot \tan(${nn(Ea.delta)}^\circ) = ${fv(Ea.v)}\ \text{kN/m}`);
+  d.eq(LX`E_p = ${fv(Ep.E)}\ \text{kN/m}\ ${Ep.used?'':'\\ (\\text{não considerado})'}${Ep.fs!==1?LX`\quad (\text{já dividido por } FS_p = ${nn(Ep.fs)})`:''}`);
+
+  d.h(1,`${s++}. Pesos e momentos em relação à ponta do pé`);
+  const rows=m.items.map(it=>[it.id,it.n+(it.kind==='q'&&!o.qStab?' (só nas tensões)':''),fv(it.W),fv(it.x),fv(it.M)]);
+  if(Ea.v>1e-9) rows.push(['Ea,v','Componente vertical do empuxo ativo, em x = B',fv(Ea.v),fv(m.B),fv(Ea.v*m.B)]);
+  rows.push(['Σ','Cargas para as tensões na base (x = posição da resultante)',fv(base.V),fv(base.xR),fv(base.M)]);
+  d.table({caption:'Cargas verticais, braços e momentos (por metro de muro)',head:['Item','Descrição','W (kN/m)','x (m)','M (kN·m/m)'],rows,hl:[rows.length-1],
+    cols:[{w:.8,al:'l'},{w:4,al:'l'},{w:1.2,al:'r'},{w:1,al:'r'},{w:1.4,al:'r'}]});
+
+  d.h(1,`${s++}. Verificação ao tombamento`);
+  d.eq(LX`\sum M_{\mathrm{est}} = ${fv(tomb.Mest)}\ \text{kN·m/m}`);
+  d.eq(LX`M_{\mathrm{ov}} = E_a\, y = ${fv(Ea.H)} \cdot ${fv(Ea.y)} = ${fv(tomb.Mov)}\ \text{kN·m/m}`);
+  d.eq(LX`FS_{\mathrm{tomb}} = \frac{\sum M_{\mathrm{est}}}{M_{\mathrm{ov}}} = \frac{${fv(tomb.Mest)}}{${fv(tomb.Mov)}} = ${fsx(tomb.FS)}\ ${tomb.ok?'\\geq':'<'}\ ${nn(tomb.req)}\quad \text{${SIG(tomb.ok)}}`);
+
+  d.h(1,`${s++}. Verificação ao deslizamento`);
+  d.eqs([LX`R_f = N \tan\delta_b = ${fv(desl.N)} \cdot \tan(${nn(desl.delta)}^\circ) = ${fv(desl.Rf)}\ \text{kN/m}`,
+         LX`R_a = c_a\, L_c = ${nn(o.ca)} \cdot ${fv(desl.Lc)} = ${fv(desl.Adh)}\ \text{kN/m}`,
+         LX`\sum R = R_f + R_a${o.usePassive?'+ E_p':''} = ${fv(desl.Hres)}\ \text{kN/m}`,
+         LX`FS_{\mathrm{desl}} = \frac{\sum R}{E_a} = \frac{${fv(desl.Hres)}}{${fv(desl.Ha)}} = ${fsx(desl.FS)}\ ${desl.ok?'\\geq':'<'}\ ${nn(desl.req)}\quad \text{${SIG(desl.ok)}}`]);
+
+  d.h(1,`${s++}. Tensões na base`);
+  d.eqs([LX`x_R = \frac{\sum M - M_{\mathrm{ov}}}{\sum V} = \frac{${fv(base.M)} - ${fv(Ea.Mov)}}{${fv(base.V)}} = ${fv(base.xR)}\ \text{m}`,
+         LX`e = \frac{B}{2} - x_R = \frac{${fv(m.B)}}{2} - ${fv(base.xR)} = ${fv(base.e)}\ \text{m}\quad \left(\frac{B}{6} = ${fv(m.B/6)}\ \text{m}\right)`]);
+  const kindTxt={full:'base totalmente comprimida (e ≤ B/6): distribuição trapezoidal',toe:'contato parcial sob a ponta (e > B/6): distribuição triangular',heel:'contato parcial sob o talão (e > B/6): distribuição triangular',out:'resultante fora da base'}[base.kind];
+  d.p(`Situação: ${kindTxt}.`);
+  if(base.kind==='full') d.eq(LX`\sigma_{\max,\min} = \frac{\sum V}{B}\left(1 \pm \frac{6e}{B}\right)`);
+  d.eqs([LX`\sigma_{\mathrm{ponta}} = ${fv(base.sT)}\ \text{kPa}`,LX`\sigma_{\mathrm{talão}} = ${fv(base.sH)}\ \text{kPa}`]);
+
+  d.h(1,`${s++}. Capacidade de carga (${o.capMethod==='meyerhof'?'Meyerhof':'Vesic'})`);
+  d.p(`Solo de fundação ${cap.soil}: $\\phi = ${nn(cap.phi)}^\\circ$, $c = ${nn(cap.c)}$ kPa, $\\gamma = ${nn(cap.g)}$ kN/m³. Sapata corrida, sem fatores de profundidade.`);
+  d.eqs([LX`B' = B - 2\left|e\right| = ${fv(m.B)} - 2 \cdot ${fv(Math.abs(base.e))} = ${fv(cap.Bp)}\ \text{m}`,
+         LX`N_q = e^{\pi\tan\phi}\tan^2\left(45^\circ+\frac{\phi}{2}\right) = ${fv(cap.Nq)}`,LX`N_c = (N_q-1)\cot\phi = ${fv(cap.Nc)}`,
+         o.capMethod==='meyerhof'?LX`N_\gamma = (N_q-1)\tan(1{,}4\phi) = ${fv(cap.Ng)}`:LX`N_\gamma = 2(N_q+1)\tan\phi = ${fv(cap.Ng)}`,
+         LX`\theta = \arctan\frac{H}{V} = ${fv(cap.theta)}^\circ\ \Rightarrow\ i_c = ${N3(cap.ic)},\ i_q = ${N3(cap.iq)},\ i_\gamma = ${N3(cap.ig)}`,
+         LX`q_0 = ${fv(cap.q0)}\ \text{kPa}`,
+         LX`q_{\mathrm{ult}} = c N_c i_c + q_0 N_q i_q + \frac{1}{2}\gamma B' N_\gamma i_\gamma = ${fv(cap.qc)} + ${fv(cap.qq)} + ${fv(cap.qg)} = ${fv(cap.qult)}\ \text{kPa}`,
+         LX`\sigma = \frac{\sum V}{B'} = ${fv(cap.sef)}\ \text{kPa}`,
+         LX`FS_{\mathrm{cap}} = \frac{q_{\mathrm{ult}}}{\sigma} = \frac{${fv(cap.qult)}}{${fv(cap.sef)}} = ${fsx(cap.FS)}\ ${cap.ok?'\\geq':'<'}\ ${nn(cap.req)}\quad \text{${SIG(cap.ok)}}`]);
+
+  d.h(1,`${s++}. Esforços no fuste, na ponta e no talão`);
+  d.p(`Esforços característicos majorados por $\\gamma_f = ${nn(o.gf)}$ (valores de cálculo $V_d$ e $M_d$). O fuste é tratado como balanço engastado na sapata, com o empuxo do plano virtual.`);
+  if(imgs.charts&&imgs.charts.length===2)
+    d.figures([{img:imgs.charts[0],cap:'Fuste: esforço cortante V'},{img:imgs.charts[1],cap:'Fuste: momento fletor M'}],8);
+  const er=(n,x,r)=>[n,fv(x),fv(r.V),fv(r.M),fv(r.Vd),fv(r.Md)];
+  const trs=[er('Base do fuste (engaste)',g.Lp,stem)];
+  if(g.Lp>1e-9) trs.push(er('Pé — face frontal do fuste',toe.x,toe));
+  if(g.Lt>1e-9) trs.push(er('Talão — face das costas',heel.x,heel));
+  d.table({caption:'Seções críticas (por metro de muro)',head:['Seção','x (m)','V (kN/m)','M (kN·m/m)','Vd (kN/m)','Md (kN·m/m)'],rows:trs,
+    cols:[{w:3,al:'l'},{w:.8,al:'r'},{w:1,al:'r'},{w:1.2,al:'r'},{w:1,al:'r'},{w:1.3,al:'r'}]});
+  d.eq(LX`M_d = \gamma_f\, M = ${nn(o.gf)} \cdot ${fv(stem.M)} = ${fv(stem.Md)}\ \text{kN·m/m}`);
+  d.eq(LX`V_d = \gamma_f\, V = ${nn(o.gf)} \cdot ${fv(stem.V)} = ${fv(stem.Vd)}\ \text{kN/m}`);
+
+  d.h(1,`${s++}. Resumo das verificações`);
+  d.table({head:['Verificação','FS calculado','FS mínimo','Situação'],rows:[
+    ['Tombamento',fsx(tomb.FS),fv(tomb.req),SIG(tomb.ok)],['Deslizamento',fsx(desl.FS),fv(desl.req),SIG(desl.ok)],['Capacidade de carga',fsx(cap.FS),fv(cap.req),SIG(cap.ok)],
+    ['Excentricidade (terço central)',`e = ${fv(base.e)} m`,`B/6 = ${fv(m.B/6)} m`,(base.ok&&base.third)?'dentro do terço central':'fora do terço central']],
+    cols:[{w:3,al:'l'},{w:1.5,al:'r'},{w:1.5,al:'r'},{w:2,al:'l'}]});
+  d.p(`**Conclusão:** ${m.okAll?'todas as verificações de estabilidade foram atendidas.':'há verificações de estabilidade não atendidas; revisar a geometria ou os parâmetros.'}`);
+  const w=[...new Set(m.warn||[])]; if(w.length){ d.h(3,'Avisos do cálculo'); w.forEach(x=>d.p('• '+x,{after:40})); }
+}
+
+/* ---------- montagem ---------- */
+function reportInfo(){
+  try{ return JSON.parse(localStorage.getItem('rpInfo')||'{}'); }catch(e){ return {}; }
+}
+async function exportDocx(info){
+  const mode=st.mode, inp=getInputs();
+  const svgEl=$('svg');
+  const imgs={schema:await svgToPng(svgEl)};
+  const paneId=mode==='muro'?'#pane-esf':'#pane-diag';
+  imgs.charts=[];
+  for(const el of document.querySelectorAll(paneId+' .chart svg')) imgs.charts.push(await svgToPng(el,2.5));
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const proj=info.proj||'Projeto de contenção';
+  const d=new DOCX.Doc({title:'Memória de cálculo — '+proj,author:info.autor||'',header:proj,headerRight:'Memória de cálculo',footer:(info.autor?info.autor+' · ':'')+hoje});
+  const toc=mode==='muro'
+    ?['Dados de entrada','Esquema considerado','Método e hipóteses','Coeficientes de empuxo','Empuxo ativo e passivo','Resultantes e pesos','Tombamento','Deslizamento','Tensões na base','Capacidade de carga','Esforços no fuste, ponta e talão','Resumo das verificações']
+    :['Dados de entrada','Esquema considerado','Método e hipóteses','Coeficientes de empuxo','Empuxo ativo e passivo','Resultantes','Dimensionamento da ficha','Diagramas de empuxo, cortante e momento','Resumo dos resultados'];
+  d.cover({kicker:'MEMÓRIA DE CÁLCULO',title:mode==='muro'?'Muro de contenção':'Cortina em balanço',subtitle:proj,
+    info:[['Projeto',proj],['Responsável',info.autor||'—'],['Local / obra',info.local||'—'],['Data',hoje],['Método de empuxo',inp.method==='rankine'?'Rankine':'Coulomb'],['Unidades','kN, m, kPa, kN/m³, graus; esforços por metro de contenção'],...(info.obs?[['Observações',info.obs]]:[])],
+    toc:toc.map((t,i)=>`${i+1}. ${t}`)});
+  if(mode==='muro'){
+    const m=window.lastMuro; rpMuro(d,inp,m,imgs);
+  }else{
+    const res=calcEmpuxos(inp), fic=window.lastFic;
+    rpCortina(d,inp,res,fic,imgs);
+  }
+  d.spacer(200);
+  d.note('Memória gerada automaticamente pelo aplicativo de contenções. As equações são editáveis no Word. Os resultados devem ser conferidos pelo engenheiro responsável.');
+  return d.bytes();
+}
+
+/* ---------- botao Exportar Word ---------- */
+$('btnDocx').onclick=()=>{
+  const i=reportInfo();
+  $('rpProj').value=i.proj||''; $('rpAutor').value=i.autor||''; $('rpLocal').value=i.local||''; $('rpObs').value=i.obs||'';
+  $('rpMsg').textContent=''; $('dlgDocx').showModal();
+};
+$('rpCancel').onclick=()=>$('dlgDocx').close();
+$('rpGo').onclick=async()=>{
+  const info={proj:$('rpProj').value.trim(),autor:$('rpAutor').value.trim(),local:$('rpLocal').value.trim(),obs:$('rpObs').value.trim()};
+  try{ localStorage.setItem('rpInfo',JSON.stringify(info)); }catch(e){}
+  const b=$('rpGo'); b.disabled=true; $('rpMsg').textContent='Gerando documento…';
+  try{
+    refresh();
+    const bytes=await exportDocx(info);
+    window.lastDocxBytes=bytes;
+    const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='memoria-calculo-'+(st.mode==='muro'?'muro':'cortina')+'.docx'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    $('dlgDocx').close();
+  }catch(err){ console.error(err); $('rpMsg').textContent='Erro ao gerar o documento: '+err.message; }
+  b.disabled=false;
+};
 
 applyMode();
 refresh();
