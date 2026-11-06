@@ -2,6 +2,9 @@
 
 As etapas seguem o [roadmap.txt](roadmap.txt).
 
+## 0.6.1 · Ícone do app (06/11/2026)
+- Ícone próprio da aba e do histórico do navegador (SVG embutido no `index.html`).
+
 ## 0.6.0 · Diagramas interativos (03/11/2026)
 - Leitura de valores ao passar o mouse (z e valor de cada curva; nos saltos, valor acima / abaixo).
 - Janela ampliada com zoom: roda do mouse, seleção de área, botões + / −, Shift + arrastar para mover, duplo clique para a vista completa.
